@@ -4,6 +4,7 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import Image from "next/image"
 
 export default function HomePage() {
   const [email, setEmail] = useState("")
@@ -25,7 +26,9 @@ export default function HomePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50">
       <div className="max-w-md text-center space-y-6">
-        <h1 className="text-4xl font-bold text-blue-600">BookLogex</h1>
+        <div className="flex justify-center mb-6">
+          <Image src="/logo.png" alt="BookLogex Logo" width={220} height={70} />
+        </div>
         <p className="text-slate-600">
           The AI-powered bookkeeping app for Australia & New Zealand.  
           Join the waitlist to get early access.
