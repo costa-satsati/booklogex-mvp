@@ -1,16 +1,24 @@
-// app/dashboard/components/Topbar.tsx
 "use client";
+
 import { Menu } from "lucide-react";
+import TopbarUserMenu from "@/components/TopbarUserMenu";
 
 export function Topbar() {
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b bg-white">
-      <button className="md:hidden p-2">
+    <header className="flex items-center justify-between px-6 py-3 border-b bg-white shadow-sm">
+      {/* Mobile menu button */}
+      <button className="md:hidden p-2 text-gray-600 hover:text-gray-800">
         <Menu size={20} />
       </button>
-      <div className="text-sm text-gray-500">Welcome back 👋</div>
+
+      {/* Greeting */}
+      <div className="text-sm text-gray-500 hidden sm:block">
+        Welcome back 👋
+      </div>
+
+      {/* User avatar & dropdown */}
       <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-full bg-blue-200" />
+        <TopbarUserMenu />
       </div>
     </header>
   );
