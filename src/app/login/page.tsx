@@ -5,8 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectedFrom") || "/dashboard";
+  //const searchParams = useSearchParams();
+  //const redirectTo = searchParams.get("redirectedFrom") || "/dashboard";
 
   const handleEmailLogin = async () => {
     const { error } = await supabase.auth.signInWithOtp({
