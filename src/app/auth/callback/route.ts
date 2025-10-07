@@ -1,61 +1,58 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import type { AuthResponse } from "@supabase/supabase-js";
 
+/**
+ * Handles Supabase OAuth/Magic Link callback.
+ * Exchanges the temporary `code` in the URL for a persistent session,
+ * sets auth cookies via Supabase SSR helpers, and redirects to /dashboard.
+ */
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  if (!code) return NextResponse.redirect(new URL("/login", req.url));
 
-  const res = NextResponse.redirect(new URL("/dashboard", req.url));
+  // If user lands here without a valid code, send back to login
+  if (!code) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
 
-  // 👇 Manually get the code-verifier cookie value
-  const codeVerifier = req.cookies.get(
-    "sb-ayiymomittshudtckydp-auth-token-code-verifier"
-  )?.value;
+  // Prepare a response object so we can attach cookies
+  const res = NextResponse.next();
 
+  // Create a server-side Supabase client with cookie handlers
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name) {
+        get(name: string) {
           return req.cookies.get(name)?.value;
         },
-        set(name, value, options) {
+        set(name: string, value: string, options: CookieOptions) {
           res.cookies.set({ name, value, ...options });
         },
-        remove(name, options) {
+        remove(name: string, options: CookieOptions) {
           res.cookies.delete({ name, ...options });
         },
       },
     }
   );
 
-  try {
-    // 👇 If Supabase fails to read its own cookie, we supply it manually
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  // Exchange the auth code for a Supabase session (auto-handles PKCE verifier)
+  const { data, error }: AuthResponse = await supabase.auth.exchangeCodeForSession(code);
 
-    if (error) {
-      console.warn("exchangeCodeForSession default failed:", error.message);
-      if (codeVerifier) {
-        const { data: manualData, error: manualError } =
-          await supabase.auth.exchangeCodeForSession({
-            authCode: code,
-            codeVerifier,
-          } as any);
-        if (manualError) throw manualError;
-        console.log("✅ Manual PKCE exchange succeeded:", manualData.session);
-      } else {
-        throw error;
-      }
-    } else {
-      console.log("✅ Default PKCE exchange succeeded:", data.session);
-    }
-  } catch (err: any) {
-    console.error("❌ Auth exchange totally failed:", err.message);
+  if (error) {
+    console.error("❌ Auth exchange failed:", error.message);
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  return res;
+  console.log("✅ Supabase session created:", {
+    user: data.user?.email,
+    expires_in: data.session?.expires_in,
+  });
+
+
+  // Redirect to dashboard (middleware will reroute to onboarding if needed)
+  const redirectUrl = new URL("/dashboard", req.url);
+  return NextResponse.redirect(redirectUrl);
 }
