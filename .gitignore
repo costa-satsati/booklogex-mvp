@@ -39,3 +39,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# --- Supabase CLI & Auth ---
+# Local config file with your personal access token
+supabase/.temp/
+supabase/config.toml
+
+# Local metadata (e.g. .env exports or CLI cache)
+.supabase
+
+# Generated dumps (optional: keep migrations but ignore large dumps)
+supabase/seed.sql
+supabase/schema.sql
+supabase/data.sql
+
