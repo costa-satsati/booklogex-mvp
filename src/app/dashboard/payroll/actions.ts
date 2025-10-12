@@ -49,7 +49,7 @@ export async function createDraftPayRun(params: {
 
     if (error) {
       // Handle duplicate key gracefully
-      if ((error as any).code === '23505') {
+      if (error.code === '23505') {
         const { data: existing } = await supabase
           .from('payroll_runs')
           .select('id')
@@ -61,8 +61,9 @@ export async function createDraftPayRun(params: {
     }
 
     return { ok: true, id: data.id };
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('❌ createDraftPayRun failed:', e);
-    return { error: e.message ?? 'Unknown error' };
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    return { error: message };
   }
 }

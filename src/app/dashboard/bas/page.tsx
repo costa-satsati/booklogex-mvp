@@ -79,9 +79,10 @@ export default function BASPage() {
         }));
 
         setData(result.sort((a, b) => (a.quarter > b.quarter ? -1 : 1)));
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        notify.error('Error loading BAS data', err.message || String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        notify.error('Error loading BAS data', message);
       } finally {
         setLoading(false);
       }

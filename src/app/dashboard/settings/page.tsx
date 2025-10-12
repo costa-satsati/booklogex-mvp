@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,22 +22,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    getCurrentUser();
-  }, []);
-
-  async function getCurrentUser() {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user) {
-      console.error('User not found');
-      return;
-    }
-
-    setUserId(data.user.id);
-    await loadSettings(data.user.id);
-  }
-
-  async function loadSettings(uid: string) {
+  const loadSettings = useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from('organisation_settings')
       .select('*')
@@ -68,7 +53,23 @@ export default function SettingsPage() {
     }
 
     setLoading(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) {
+        console.error('User not found');
+        setLoading(false);
+        return;
+      }
+
+      setUserId(data.user.id);
+      await loadSettings(data.user.id);
+    };
+
+    void fetchCurrentUser();
+  }, [loadSettings]);
 
   async function saveSettings() {
     if (!userId) return;
@@ -176,7 +177,9 @@ export default function SettingsPage() {
             <Label>GST Reporting Cycle</Label>
             <Select
               value={settings.gst_cycle || 'quarterly'}
-              onValueChange={(val) => setSettings({ ...settings, gst_cycle: val as any })}
+              onValueChange={(val: 'monthly' | 'quarterly' | 'annual') =>
+                setSettings({ ...settings, gst_cycle: val })
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select cycle" />
@@ -250,8 +253,8 @@ export default function SettingsPage() {
             <Label>Default Pay Frequency</Label>
             <Select
               value={settings.default_pay_frequency || 'fortnightly'}
-              onValueChange={(val) =>
-                setSettings({ ...settings, default_pay_frequency: val as any })
+              onValueChange={(val: 'weekly' | 'fortnightly' | 'monthly') =>
+                setSettings({ ...settings, default_pay_frequency: val })
               }
             >
               <SelectTrigger className="w-full">

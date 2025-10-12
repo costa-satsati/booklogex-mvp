@@ -22,9 +22,22 @@ interface Props {
   runId: string | null;
 }
 
+type PayrollRunDetails = {
+  id: string;
+  status: string;
+  frequency: string;
+  pay_period_start: string;
+  pay_period_end: string;
+  pay_date: string | null;
+  total_gross: number | null;
+  total_tax: number | null;
+  total_super: number | null;
+  total_net: number | null;
+};
+
 export default function PayrollRunDetailsDrawer({ open, onOpenChange, runId }: Props) {
   const [loading, setLoading] = useState(false);
-  const [run, setRun] = useState<any>(null);
+  const [run, setRun] = useState<PayrollRunDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -41,7 +54,7 @@ export default function PayrollRunDetailsDrawer({ open, onOpenChange, runId }: P
         .single();
 
       if (error) setError(error.message);
-      else setRun(data);
+      else setRun(data as PayrollRunDetails);
       setLoading(false);
     })();
   }, [open, runId]);
@@ -125,7 +138,7 @@ export default function PayrollRunDetailsDrawer({ open, onOpenChange, runId }: P
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Pay Date</span>
                   <span className="font-medium">
-                    {format(new Date(run.pay_date), 'd MMM yyyy')}
+                    {run.pay_date ? format(new Date(run.pay_date), 'd MMM yyyy') : '—'}
                   </span>
                 </div>
               </div>

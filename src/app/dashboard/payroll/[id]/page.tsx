@@ -55,10 +55,11 @@ export default function PayRunEditor({ params }: { params: Promise<{ id: string 
 
         setRun(runData);
         setItems(itemsData || []);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error('❌ Failed to load pay run:', e);
-        setError(e.message || 'Failed to load pay run');
-        notify.error('Error loading pay run', e.message ?? 'Unexpected error occurred');
+        const message = e instanceof Error ? e.message : 'Failed to load pay run';
+        setError(message);
+        notify.error('Error loading pay run', message);
       } finally {
         setLoading(false);
       }
@@ -143,7 +144,6 @@ export default function PayRunEditor({ params }: { params: Promise<{ id: string 
 
       {/* Employee Pay Items */}
       <EmployeePayTable
-        runId={run.id}
         items={items}
         onItemsChange={setItems}
         readOnly={run.status === 'finalized'}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { format, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
@@ -156,9 +156,10 @@ export default function CreatePayRunWizard({
         router.push(`/dashboard/payroll/${data.id}`);
         onOpenChange(false);
       }, 1000);
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to create pay run');
-      notify.error('Failed to create pay run', e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to create pay run';
+      setError(message);
+      notify.error('Failed to create pay run', message);
     } finally {
       setBusy(false);
     }
@@ -186,8 +187,9 @@ export default function CreatePayRunWizard({
 
       notify.success('Draft saved', 'You can continue this pay run later.');
       onOpenChange(false);
-    } catch (e: any) {
-      notify.error('Failed to save draft', e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to save draft';
+      notify.error('Failed to save draft', message);
     } finally {
       setBusy(false);
     }

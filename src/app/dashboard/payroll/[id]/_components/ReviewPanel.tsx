@@ -29,15 +29,21 @@ export default function ReviewPanel({ runId, runStatus }: Props) {
     try {
       const { data, error } = await supabase.rpc('validate_payrun', { p_run: runId });
       if (error) throw error;
-      setResults(data || []);
+      const validationResults = Array.isArray(data)
+        ? data.filter((entry): entry is ValidationResult =>
+            typeof entry?.rule === 'string' && typeof entry?.passed === 'boolean'
+          )
+        : [];
+      setResults(validationResults);
       setValidated(true);
 
-      const passed = data.every((r: ValidationResult) => r.passed);
+      const passed = validationResults.every((r) => r.passed);
       if (passed) notify.success('All checks passed', 'You can now finalize this pay run.');
       else notify.info('Some checks need review', 'See the list below.');
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      notify.error('Validation failed', e.message ?? 'Could not run validation.');
+      const message = e instanceof Error ? e.message : 'Could not run validation.';
+      notify.error('Validation failed', message);
     } finally {
       setLoading(false);
     }
@@ -51,9 +57,10 @@ export default function ReviewPanel({ runId, runStatus }: Props) {
 
       notify.success('Pay run finalized', 'Redirecting to Payroll Overview…');
       setTimeout(() => router.push('/dashboard/payroll'), 1200);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      notify.error('Failed to finalize pay run', e.message ?? 'Please try again.');
+      const message = e instanceof Error ? e.message : 'Please try again.';
+      notify.error('Failed to finalize pay run', message);
     } finally {
       setFinalizing(false);
     }

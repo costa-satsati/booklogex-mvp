@@ -1,10 +1,8 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
-  const router = useRouter();
   //const searchParams = useSearchParams();
   //const redirectTo = searchParams.get("redirectedFrom") || "/dashboard";
 

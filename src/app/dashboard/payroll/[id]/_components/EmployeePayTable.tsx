@@ -9,7 +9,6 @@ import type { PayrollItem } from '@/types/payroll';
 import { notify } from '@/lib/notify';
 
 interface EmployeePayTableProps {
-  runId: string;
   items: PayrollItem[];
   onItemsChange: (updated: PayrollItem[]) => void;
   readOnly?: boolean;
@@ -18,7 +17,6 @@ interface EmployeePayTableProps {
 type NumericField = 'gross' | 'tax' | 'super'; // ✅ Restrict editable fields
 
 export default function EmployeePayTable({
-  runId,
   items,
   onItemsChange,
   readOnly = false,
@@ -47,9 +45,10 @@ export default function EmployeePayTable({
 
       if (error) throw error;
       notify.success('Saved successfully', 'Employee pay items updated.');
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      notify.error('Save failed', e.message ?? 'Could not save pay items.');
+      const message = e instanceof Error ? e.message : 'Could not save pay items.';
+      notify.error('Save failed', message);
     } finally {
       setSaving(false);
     }

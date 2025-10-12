@@ -14,7 +14,7 @@ export async function checkOverlap(
   const endIso = end.toISOString().slice(0, 10);
 
   // NOT (existing_end < start OR existing_start > end)
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('payroll_runs')
     .select('id, period_start, period_end')
     .eq('org_id', orgId)
