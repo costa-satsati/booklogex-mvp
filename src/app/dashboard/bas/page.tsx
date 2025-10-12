@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useOrgContext } from '@/context/OrgSettingsContext';
+import { notify } from '@/lib/notify';
 
 type Summary = {
   quarter: string;
@@ -24,87 +26,74 @@ type Transaction = {
 export default function BASPage() {
   const [data, setData] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [orgInfo, setOrgInfo] = useState<{ name: string; abn: string } | null>(null);
+  const { settings: orgSettings } = useOrgContext();
 
+  // 🧮 Load and aggregate BAS data
   useEffect(() => {
     const loadData = async () => {
-      // 🔹 Fetch transactions
-      const { data: txns, error } = await supabase
-        .from('transactions')
-        .select('txn_date, amount, gst_amount, type')
-        .order('txn_date', { ascending: true });
+      try {
+        const { data: txns, error } = await supabase
+          .from('transactions')
+          .select('txn_date, amount, gst_amount, type')
+          .order('txn_date', { ascending: true });
 
-      if (error || !txns) {
-        console.error(error);
-        return;
+        if (error) throw error;
+        if (!txns?.length) {
+          notify.info('No transactions found');
+          setData([]);
+          setLoading(false);
+          return;
+        }
+
+        // Group by quarter (based on txn_date)
+        const grouped: Record<string, Summary> = {};
+
+        txns.forEach((t: Transaction) => {
+          const date = new Date(t.txn_date);
+          const year = date.getFullYear();
+          const quarter = `Q${Math.floor(date.getMonth() / 3) + 1} ${year}`;
+
+          if (!grouped[quarter]) {
+            grouped[quarter] = {
+              quarter,
+              income: 0,
+              expense: 0,
+              gst_collected: 0,
+              gst_paid: 0,
+              net_gst: 0,
+            };
+          }
+
+          if (t.type === 'income') {
+            grouped[quarter].income += t.amount;
+            grouped[quarter].gst_collected += t.gst_amount;
+          } else if (t.type === 'expense') {
+            grouped[quarter].expense += t.amount;
+            grouped[quarter].gst_paid += t.gst_amount;
+          }
+        });
+
+        const result = Object.values(grouped).map((g) => ({
+          ...g,
+          net_gst: g.gst_collected - g.gst_paid,
+        }));
+
+        setData(result.sort((a, b) => (a.quarter > b.quarter ? -1 : 1)));
+      } catch (err: any) {
+        console.error(err);
+        notify.error('Error loading BAS data', err.message || String(err));
+      } finally {
+        setLoading(false);
       }
-
-      // 🔹 Fetch current user's org info
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('org_id')
-          .eq('id', user.id)
-          .single();
-
-        if (profile?.org_id) {
-          const { data: org } = await supabase
-            .from('organisations')
-            .select('name, abn')
-            .eq('id', profile.org_id)
-            .single();
-
-          if (org) setOrgInfo(org);
-        }
-      }
-
-      // 🔹 Group transactions by quarter
-      const grouped: Record<string, Summary> = {};
-
-      txns.forEach((t: Transaction) => {
-        const date = new Date(t.txn_date);
-        const year = date.getFullYear();
-        const quarter = `Q${Math.floor(date.getMonth() / 3) + 1} ${year}`;
-
-        if (!grouped[quarter]) {
-          grouped[quarter] = {
-            quarter,
-            income: 0,
-            expense: 0,
-            gst_collected: 0,
-            gst_paid: 0,
-            net_gst: 0,
-          };
-        }
-
-        if (t.type === 'income') {
-          grouped[quarter].income += t.amount;
-          grouped[quarter].gst_collected += t.gst_amount;
-        } else if (t.type === 'expense') {
-          grouped[quarter].expense += t.amount;
-          grouped[quarter].gst_paid += t.gst_amount;
-        }
-      });
-
-      const result = Object.values(grouped).map((g: Summary) => ({
-        ...g,
-        net_gst: g.gst_collected - g.gst_paid,
-      }));
-
-      setData(result.sort((a, b) => (a.quarter > b.quarter ? -1 : 1)));
-      setLoading(false);
     };
 
     loadData();
   }, []);
 
-  // 🔹 Export BAS data as CSV
+  // 📤 Export BAS data as CSV
   const exportCSV = () => {
-    if (!data.length) return alert('No data to export.');
+    if (!data.length) return notify.info('No data to export.');
+
     const headers = ['Quarter', 'Income', 'Expenses', 'GST Collected', 'GST Paid', 'Net GST'];
     const rows = data.map((q) => [
       q.quarter,
@@ -116,29 +105,31 @@ export default function BASPage() {
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const filename = `BAS_Summary_${new Date().toISOString().slice(0, 10)}.csv`;
-    saveAs(blob, filename);
+    saveAs(blob, `BAS_Summary_${new Date().toISOString().slice(0, 10)}.csv`);
+    notify.success('CSV exported successfully');
   };
 
-  // 🔹 Export BAS data as PDF
+  // 📄 Export BAS data as PDF
   const exportPDF = () => {
-    if (!data.length) return alert('No data to export.');
+    if (!data.length) return notify.info('No data to export.');
 
     const doc = new jsPDF();
 
-    // 🧾 Company header
+    // 🧾 Header
     doc.setFontSize(14);
     doc.text('Business Activity Statement (BAS) Summary', 14, 15);
 
     doc.setFontSize(10);
-    if (orgInfo) {
-      doc.text(`Organisation: ${orgInfo.name}`, 14, 22);
-      doc.text(`ABN: ${orgInfo.abn}`, 14, 28);
+    if (orgSettings) {
+      const orgName = orgSettings.business_name ?? 'Your Organisation';
+      const abn = orgSettings.abn
+        ? orgSettings.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')
+        : '';
+      doc.text(`Organisation: ${orgName}`, 14, 22);
+      if (abn) doc.text(`ABN: ${abn}`, 14, 28);
     }
 
-    // 🕒 Date generated
     doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 180, 15, { align: 'right' });
 
     // 📊 Table
@@ -167,6 +158,7 @@ export default function BASPage() {
     );
 
     doc.save(`BAS_Summary_${new Date().toISOString().slice(0, 10)}.pdf`);
+    notify.success('PDF exported successfully');
   };
 
   if (loading) return <div className="p-6 text-gray-500">Loading BAS summary...</div>;
