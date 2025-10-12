@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle } from "lucide-react";
 import AddTransactionModal from "@/components/AddTransactionModal";
@@ -14,58 +14,55 @@ type Transaction = {
   type: "income" | "expense";
 };
 
+type FilterOption = "this" | "last" | "thisQuarter" | "lastQuarter" | "all";
+
+const computeDateRange = (filter: FilterOption) => {
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  let start: Date | null = null;
+  let end: Date | null = null;
+
+  const getQuarterStart = (m: number, y: number) => new Date(y, Math.floor(m / 3) * 3, 1);
+  const getQuarterEnd = (m: number, y: number) => new Date(y, Math.floor(m / 3) * 3 + 3, 0);
+
+  if (filter === "this") {
+    start = new Date(year, month, 1);
+    end = new Date(year, month + 1, 0);
+  } else if (filter === "last") {
+    start = new Date(year, month - 1, 1);
+    end = new Date(year, month, 0);
+  } else if (filter === "thisQuarter") {
+    start = getQuarterStart(month, year);
+    end = getQuarterEnd(month, year);
+  } else if (filter === "lastQuarter") {
+    const prevQuarterMonth = month - 3;
+    const adjYear = prevQuarterMonth < 0 ? year - 1 : year;
+    const adjMonth = (prevQuarterMonth + 12) % 12;
+    start = getQuarterStart(adjMonth, adjYear);
+    end = getQuarterEnd(adjMonth, adjYear);
+  }
+
+  return { start, end };
+};
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [filter, setFilter] = useState<
-    "this" | "last" | "thisQuarter" | "lastQuarter" | "all"
-  >("this");
+  const [filter, setFilter] = useState<FilterOption>("this");
 
-  // 🧭 Load transactions
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     const { data, error } = await supabase
       .from("transactions")
       .select("*")
       .order("txn_date", { ascending: false });
     if (!error && data) setTransactions(data);
-  };
+  }, []);
 
-  // 📆 Reusable date range calculator
-  const getDateRange = () => {
-    const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
-    let start: Date | null = null;
-    let end: Date | null = null;
+  const dateRange = useMemo(() => computeDateRange(filter), [filter]);
 
-    const getQuarterStart = (m: number, y: number) =>
-      new Date(y, Math.floor(m / 3) * 3, 1);
-    const getQuarterEnd = (m: number, y: number) =>
-      new Date(y, Math.floor(m / 3) * 3 + 3, 0);
-
-    if (filter === "this") {
-      start = new Date(year, month, 1);
-      end = new Date(year, month + 1, 0);
-    } else if (filter === "last") {
-      start = new Date(year, month - 1, 1);
-      end = new Date(year, month, 0);
-    } else if (filter === "thisQuarter") {
-      start = getQuarterStart(month, year);
-      end = getQuarterEnd(month, year);
-    } else if (filter === "lastQuarter") {
-      const prevQuarterMonth = month - 3;
-      const adjYear = prevQuarterMonth < 0 ? year - 1 : year;
-      const adjMonth = (prevQuarterMonth + 12) % 12;
-      start = getQuarterStart(adjMonth, adjYear);
-      end = getQuarterEnd(adjMonth, adjYear);
-    }
-
-    return { start, end };
-  };
-
-  // 💰 Totals calculator
-  const getFilteredTotals = () => {
-    const { start, end } = getDateRange();
+  const totals = useMemo(() => {
+    const { start, end } = dateRange;
 
     const filtered = transactions.filter((t) => {
       if (!start || !end) return true;
@@ -86,22 +83,20 @@ export default function TransactionsPage() {
       },
       { income: 0, expense: 0, gst: 0 }
     );
-  };
+  }, [transactions, dateRange]);
 
-  // 🧾 Table filtering
   const visibleTransactions = useMemo(() => {
     if (filter === "all") return transactions;
-    const { start, end } = getDateRange();
+    const { start, end } = dateRange;
     return transactions.filter((t) => {
       if (!start || !end) return true;
       const txn = new Date(t.txn_date);
       return txn >= start && txn <= end;
     });
-  }, [transactions, filter]);
+  }, [transactions, filter, dateRange]);
 
-  // ♻️ Load + Realtime sync
   useEffect(() => {
-    loadTransactions();
+    void loadTransactions();
 
     const channel = supabase
       .channel("transactions-changes")
@@ -133,15 +128,12 @@ export default function TransactionsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [loadTransactions]);
 
-  const totals = getFilteredTotals();
   const net = totals.income - totals.expense;
 
-  // 🏷 Label generator
-  const periodLabel = (() => {
-    const fmtMonth = (d: Date) =>
-      d.toLocaleString("en-AU", { month: "long" });
+  const periodLabel = useMemo(() => {
+    const fmtMonth = (d: Date) => d.toLocaleString("en-AU", { month: "long" });
     const now = new Date();
 
     switch (filter) {
@@ -155,17 +147,15 @@ export default function TransactionsPage() {
       }
       case "lastQuarter": {
         const lastQMonth = now.getMonth() - 3;
-        const adjYear =
-          lastQMonth < 0 ? now.getFullYear() - 1 : now.getFullYear();
+        const adjYear = lastQMonth < 0 ? now.getFullYear() - 1 : now.getFullYear();
         const q = Math.floor(((lastQMonth + 12) % 12) / 3) + 1;
         return `Q${q} ${adjYear}`;
       }
       default:
         return "All Time";
     }
-  })();
+  }, [filter]);
 
-  // 💡 UI
   return (
     <div className="space-y-4">
       {/* Header + Filter */}

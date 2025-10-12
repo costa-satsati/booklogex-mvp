@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import {
   BarChart,
@@ -33,7 +33,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodOption>('thisMonth');
 
-  const getDateRange = () => {
+  const getDateRange = useCallback(() => {
     const now = new Date();
     let start: Date | null = null;
     let end: Date | null = new Date(now);
@@ -66,9 +66,9 @@ export default function DashboardPage() {
         end = null;
     }
     return { start, end };
-  };
+  }, [period]);
 
-  const loadSummary = async () => {
+  const loadSummary = useCallback(async () => {
     setLoading(true);
     const { start, end } = getDateRange();
 
@@ -122,11 +122,11 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getDateRange]);
 
   useEffect(() => {
-    loadSummary();
-  }, [period]);
+    void loadSummary();
+  }, [loadSummary]);
 
   if (loading || !summary) {
     return (
