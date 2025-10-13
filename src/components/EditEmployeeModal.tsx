@@ -1,278 +1,220 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useEffect, useState } from 'react';
 import type { Employee, EmploymentType, PayFrequency } from '@/types/employee';
-import { validateEmployeeForm, type EmployeeFormErrors } from '@/lib/validateEmployeeForm';
+import { validateEmployeeForm } from '@/lib/validateEmployeeForm';
+import { notify } from '@/lib/notify';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+
+interface EditEmployeeModalProps {
+  open: boolean;
+  employee: Employee | null;
+  onClose: () => void;
+  onSave: (emp: Employee) => Promise<void>;
+}
 
 export default function EditEmployeeModal({
+  open,
   employee,
   onClose,
-  onUpdated,
-}: {
-  employee: Employee;
-  onClose: () => void;
-  onUpdated: () => void;
-}) {
-  const [form, setForm] = useState<Omit<Employee, 'id' | 'created_at' | 'org_id'>>({
-    full_name: '',
-    email: '',
-    tfn: '',
-    employment_type: 'full_time',
-    base_salary: null,
-    hourly_rate: null,
-    pay_frequency: 'fortnightly',
-    super_rate: 11.0,
-    start_date: '',
-    end_date: null,
-    position: '',
-    active: true,
-  });
+  onSave,
+}: EditEmployeeModalProps) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [form, setForm] = useState<Partial<Employee>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof Employee, string>>>({});
 
-  const [errors, setErrors] = useState<EmployeeFormErrors>({});
-  const [loading, setLoading] = useState(false);
-
-  // Load existing employee into form
+  // 🧩 Prefill employee data
   useEffect(() => {
     if (employee) {
-      setForm({
-        full_name: employee.full_name || '',
-        email: employee.email || '',
-        tfn: employee.tfn || '',
-        employment_type: employee.employment_type || 'full_time',
-        base_salary: employee.base_salary,
-        hourly_rate: employee.hourly_rate,
-        pay_frequency: employee.pay_frequency || 'fortnightly',
-        super_rate: employee.super_rate ?? 11.0,
-        start_date: employee.start_date || '',
-        end_date: employee.end_date || null,
-        position: employee.position || '',
-        active: employee.active ?? true,
-      });
+      setForm(employee);
+      setStep(1);
+      setErrors({});
     }
-  }, [employee]);
+  }, [employee, open]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    let parsedValue: string | number | boolean | null = value;
-    if (type === 'number') parsedValue = value === '' ? null : parseFloat(value);
-    setForm((prev) => ({ ...prev, [name]: parsedValue }));
+  const handleChange = <K extends keyof Employee>(key: K, value: Employee[K]) => {
+    setForm((f) => ({ ...f, [key]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const validateCurrent = () => {
+    const { valid, errors: e } = validateEmployeeForm(form);
+    setErrors(e);
+    return valid;
+  };
 
-    const validationErrors = validateEmployeeForm(form);
-    setErrors(validationErrors);
+  const handleNext = () => {
+    if (validateCurrent()) setStep(2);
+  };
 
-    if (Object.keys(validationErrors).length > 0) {
-      setLoading(false);
-      return;
-    }
+  const handleBack = () => setStep(1);
 
-    const updatePayload = {
-      full_name: form.full_name,
-      email: form.email || null,
-      tfn: form.tfn || null,
-      employment_type: form.employment_type as EmploymentType,
-      base_salary: form.base_salary,
-      hourly_rate: form.hourly_rate,
-      pay_frequency: form.pay_frequency as PayFrequency,
-      super_rate: form.super_rate,
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-      position: form.position || null,
-      active: form.active,
-    };
-
-    const { error } = await supabase.from('employees').update(updatePayload).eq('id', employee.id);
-
-    setLoading(false);
-
-    if (error) {
-      console.error('❌ Error updating employee:', error);
-      alert('Error updating employee: ' + error.message);
-    } else {
-      onUpdated();
+  const handleSave = async () => {
+    if (!validateCurrent()) return;
+    try {
+      await onSave(form as Employee);
       onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update employee';
+      notify.error('Error updating employee', message);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-6 rounded-lg w-96 space-y-3 shadow-lg overflow-y-auto max-h-[90vh]"
-      >
-        <h2 className="text-lg font-semibold">Edit Employee</h2>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {step === 1
+              ? 'Edit Employee — Step 1: Basic Info'
+              : 'Edit Employee — Step 2: Payroll Details'}
+          </DialogTitle>
+        </DialogHeader>
 
-        {/* Full name */}
-        <div>
-          <input
-            type="text"
-            name="full_name"
-            placeholder="Full Name"
-            required
-            value={form.full_name}
-            onChange={handleChange}
-            className={`w-full border rounded p-2 ${errors.full_name ? 'border-red-500' : ''}`}
-          />
-          {errors.full_name && <p className="text-red-500 text-xs mt-1">{errors.full_name}</p>}
-        </div>
+        {step === 1 && (
+          <div className="space-y-4 mt-4">
+            <div className="space-y-1">
+              <Label htmlFor="full_name">Full Name</Label>
+              <Input
+                id="full_name"
+                value={form.full_name || ''}
+                onChange={(e) => handleChange('full_name', e.target.value)}
+              />
+              {errors.full_name && <p className="text-xs text-red-600">{errors.full_name}</p>}
+            </div>
 
-        {/* Email */}
-        <div>
-          <input
-            type="email"
-            name="email"
-            placeholder="Email"
-            value={form.email ?? ''}
-            onChange={handleChange}
-            className="w-full border rounded p-2"
-          />
-        </div>
+            <div className="space-y-1">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={form.email || ''}
+                onChange={(e) => handleChange('email', e.target.value)}
+              />
+              {errors.email && <p className="text-xs text-red-600">{errors.email}</p>}
+            </div>
 
-        {/* TFN */}
-        <div>
-          <input
-            type="text"
-            name="tfn"
-            placeholder="TFN (Tax File Number)"
-            value={form.tfn ?? ''}
-            onChange={handleChange}
-            className="w-full border rounded p-2"
-          />
-        </div>
+            <div className="space-y-1">
+              <Label htmlFor="position">Position / Role</Label>
+              <Input
+                id="position"
+                value={form.position || ''}
+                onChange={(e) => handleChange('position', e.target.value)}
+              />
+            </div>
 
-        {/* Employment Type / Pay Frequency */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <select
-              name="employment_type"
-              value={form.employment_type}
-              onChange={handleChange}
-              className={`border rounded p-2 w-full ${
-                errors.employment_type ? 'border-red-500' : ''
-              }`}
-            >
-              <option value="full_time">Full-time</option>
-              <option value="part_time">Part-time</option>
-              <option value="casual">Casual</option>
-              <option value="contractor">Contractor</option>
-            </select>
-            {errors.employment_type && (
-              <p className="text-red-500 text-xs mt-1">{errors.employment_type}</p>
-            )}
+            <div className="space-y-1">
+              <Label htmlFor="employment_type">Employment Type</Label>
+              <Select
+                value={(form.employment_type as EmploymentType) || 'full_time'}
+                onValueChange={(v) => handleChange('employment_type', v as EmploymentType)}
+              >
+                <SelectTrigger id="employment_type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full_time">Full Time</SelectItem>
+                  <SelectItem value="part_time">Part Time</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="contractor">Contractor</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.employment_type && (
+                <p className="text-xs text-red-600">{errors.employment_type}</p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="start_date">Start Date</Label>
+              <Input
+                id="start_date"
+                type="date"
+                value={form.start_date || ''}
+                onChange={(e) => handleChange('start_date', e.target.value)}
+              />
+              {errors.start_date && <p className="text-xs text-red-600">{errors.start_date}</p>}
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <Button onClick={handleNext}>Next →</Button>
+            </div>
           </div>
+        )}
 
-          <div>
-            <select
-              name="pay_frequency"
-              value={form.pay_frequency}
-              onChange={handleChange}
-              className={`border rounded p-2 w-full ${
-                errors.pay_frequency ? 'border-red-500' : ''
-              }`}
-            >
-              <option value="weekly">Weekly</option>
-              <option value="fortnightly">Fortnightly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            {errors.pay_frequency && (
-              <p className="text-red-500 text-xs mt-1">{errors.pay_frequency}</p>
-            )}
+        {step === 2 && (
+          <div className="space-y-4 mt-4">
+            <div className="space-y-1">
+              <Label htmlFor="hourly_rate">Hourly Rate (AUD)</Label>
+              <Input
+                id="hourly_rate"
+                type="number"
+                step="0.01"
+                value={form.hourly_rate?.toString() || ''}
+                onChange={(e) => handleChange('hourly_rate', parseFloat(e.target.value) || 0)}
+              />
+              {errors.hourly_rate && <p className="text-xs text-red-600">{errors.hourly_rate}</p>}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="super_rate">Superannuation Rate (%)</Label>
+              <Input
+                id="super_rate"
+                type="number"
+                step="0.1"
+                value={form.super_rate?.toString() || ''}
+                onChange={(e) => handleChange('super_rate', parseFloat(e.target.value) || 0)}
+              />
+              {errors.super_rate && <p className="text-xs text-red-600">{errors.super_rate}</p>}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="pay_frequency">Pay Frequency</Label>
+              <Select
+                value={(form.pay_frequency as PayFrequency) || 'fortnightly'}
+                onValueChange={(v) => handleChange('pay_frequency', v as PayFrequency)}
+              >
+                <SelectTrigger id="pay_frequency">
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="fortnightly">Fortnightly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.pay_frequency && (
+                <p className="text-xs text-red-600">{errors.pay_frequency}</p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={form.notes || ''}
+                onChange={(e) => handleChange('notes', e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-between mt-6">
+              <Button variant="outline" onClick={handleBack}>
+                ← Back
+              </Button>
+              <Button onClick={handleSave}>Save Changes</Button>
+            </div>
           </div>
-        </div>
-
-        {/* Salary / Hourly Rate */}
-        <div>
-          <input
-            type="number"
-            name="base_salary"
-            placeholder="Base Salary (AUD)"
-            step="0.01"
-            value={form.base_salary ?? ''}
-            onChange={handleChange}
-            className={`w-full border rounded p-2 ${errors.salary ? 'border-red-500' : ''}`}
-          />
-          <input
-            type="number"
-            name="hourly_rate"
-            placeholder="Hourly Rate (AUD)"
-            step="0.01"
-            value={form.hourly_rate ?? ''}
-            onChange={handleChange}
-            className={`w-full border rounded p-2 mt-2 ${errors.salary ? 'border-red-500' : ''}`}
-          />
-          {errors.salary && <p className="text-red-500 text-xs mt-1">{errors.salary}</p>}
-        </div>
-
-        {/* Super rate */}
-        <div>
-          <input
-            type="number"
-            name="super_rate"
-            placeholder="Super %"
-            step="0.1"
-            value={form.super_rate ?? ''}
-            onChange={handleChange}
-            className={`w-full border rounded p-2 ${errors.super_rate ? 'border-red-500' : ''}`}
-          />
-          {errors.super_rate && <p className="text-red-500 text-xs mt-1">{errors.super_rate}</p>}
-        </div>
-
-        {/* Start / End date */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <input
-              type="date"
-              name="start_date"
-              value={form.start_date ?? ''}
-              onChange={handleChange}
-              className={`w-full border rounded p-2 ${errors.start_date ? 'border-red-500' : ''}`}
-            />
-            {errors.start_date && <p className="text-red-500 text-xs mt-1">{errors.start_date}</p>}
-          </div>
-
-          <div>
-            <input
-              type="date"
-              name="end_date"
-              value={form.end_date ?? ''}
-              onChange={handleChange}
-              className="w-full border rounded p-2"
-            />
-          </div>
-        </div>
-
-        {/* Active status toggle */}
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            type="checkbox"
-            name="active"
-            checked={!!form.active}
-            onChange={(e) => setForm((prev) => ({ ...prev, active: e.target.checked }))}
-          />
-          <label htmlFor="active" className="text-sm text-gray-700">
-            Active employee
-          </label>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex justify-end gap-2 mt-4">
-          <button type="button" onClick={onClose} className="px-4 py-2 border rounded">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded"
-          >
-            {loading ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </form>
-    </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

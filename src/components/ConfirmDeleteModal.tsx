@@ -1,41 +1,40 @@
 'use client';
 
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+
+interface ConfirmDeleteModalProps {
+  open: boolean;
+  title: string;
+  description?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
 export default function ConfirmDeleteModal({
-  title = 'Confirm Deletion',
-  message = 'Are you sure you want to delete this item?',
+  open,
+  title,
+  description,
   onConfirm,
   onCancel,
-  loading = false,
-}: {
-  title?: string;
-  message?: string;
-  onConfirm: () => void | Promise<void>;
-  onCancel: () => void;
-  loading?: boolean;
-}) {
+}: ConfirmDeleteModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-96 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-        <p className="text-gray-600">{message}</p>
+    <Dialog open={open} onOpenChange={onCancel}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {description && <p className="text-sm text-slate-600 mt-2">{description}</p>}
 
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-          >
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            {loading ? 'Deleting...' : 'Delete'}
-          </button>
+          </Button>
+          <Button onClick={onConfirm} className="bg-red-600 hover:bg-red-700 text-white">
+            Delete
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
