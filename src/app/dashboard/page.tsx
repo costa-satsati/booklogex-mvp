@@ -11,10 +11,29 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  PieChart,
+  PieLabelRenderProps,
+  Pie,
+  Cell,
 } from 'recharts';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Users,
+  FileText,
+  AlertCircle,
+  CheckCircle2,
+  Calendar,
+  Download,
+  ChevronRight,
+  Briefcase,
+  Receipt,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 type Summary = {
   income: number;
@@ -29,9 +48,12 @@ type Summary = {
 type PeriodOption = 'thisMonth' | 'lastMonth' | 'quarterToDate' | 'financialYearToDate' | 'allTime';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodOption>('thisMonth');
+  const [employeeCount, setEmployeeCount] = useState(0);
+  const [upcomingPayDate, setUpcomingPayDate] = useState<string | null>(null);
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -85,8 +107,23 @@ export default function DashboardPage() {
           .lte('pay_period_end', end.toISOString());
       }
 
-      const [{ data: txns, error: txnError }, { data: payroll, error: payrollError }] =
-        await Promise.all([txnQuery, payrollQuery]);
+      const [
+        { data: txns, error: txnError },
+        { data: payroll, error: payrollError },
+        { data: employees, error: empError, count: empCount }, // ✅ FIX #1: Extract count
+        { data: upcomingRun, error: runError },
+      ] = await Promise.all([
+        txnQuery,
+        payrollQuery,
+        supabase.from('employees').select('id', { count: 'exact', head: true }).eq('active', true), // ✅ Use head: true for count
+        supabase
+          .from('payroll_runs')
+          .select('pay_date')
+          .gte('pay_date', new Date().toISOString())
+          .order('pay_date', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
       if (txnError) throw txnError;
       if (payrollError) throw payrollError;
@@ -117,6 +154,15 @@ export default function DashboardPage() {
         payg,
         super: superTotal,
       });
+
+      // ✅ FIX #1: Use extracted count
+      if (!empError) {
+        setEmployeeCount(empCount || 0);
+      }
+
+      if (!runError && upcomingRun?.pay_date) {
+        setUpcomingPayDate(upcomingRun.pay_date);
+      }
     } catch (err) {
       console.error('❌ Failed to load dashboard summary:', err);
     } finally {
@@ -131,7 +177,10 @@ export default function DashboardPage() {
   if (loading || !summary) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500">
-        Loading summary...
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p>Loading dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -148,13 +197,18 @@ export default function DashboardPage() {
   };
 
   const chartData = [
-    { name: 'Income', value: summary.income },
-    { name: 'Expenses', value: summary.expenses },
-    { name: 'Wages', value: summary.wages },
-    { name: 'GST Payable', value: gstPayable },
+    { name: 'Income', value: summary.income, color: '#3b82f6' },
+    { name: 'Expenses', value: summary.expenses, color: '#ef4444' },
+    { name: 'Wages', value: summary.wages, color: '#8b5cf6' },
   ];
 
-  // 📄 CSV Export
+  const pieData = [
+    { name: 'Income', value: summary.income, color: '#10b981' },
+    { name: 'Expenses', value: summary.expenses, color: '#f59e0b' },
+    { name: 'Wages', value: summary.wages, color: '#6366f1' },
+  ];
+
+  // Export functions
   const exportCSV = () => {
     const rows = [
       ['Metric', 'Amount (AUD)'],
@@ -170,13 +224,13 @@ export default function DashboardPage() {
     ];
     const csvContent = rows.map((r) => r.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    saveAs(blob, `BAS_Summary_${labelMap[period].replace(/\s/g, '_')}.csv`);
+    saveAs(blob, `Dashboard_Summary_${labelMap[period].replace(/\s/g, '_')}.csv`);
   };
 
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
-    doc.text(`BAS Summary - ${labelMap[period]}`, 14, 20);
+    doc.text(`Dashboard Summary - ${labelMap[period]}`, 14, 20);
     doc.setFontSize(12);
 
     autoTable(doc, {
@@ -216,106 +270,353 @@ export default function DashboardPage() {
       ],
     });
 
-    doc.save(`BAS_Summary_${labelMap[period].replace(/\s/g, '_')}.pdf`);
+    doc.save(`Dashboard_Summary_${labelMap[period].replace(/\s/g, '_')}.pdf`);
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header + Actions */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">Dashboard Summary</h1>
-        <div className="flex gap-2">
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value as PeriodOption)}
-            className="border rounded p-2 text-sm"
-          >
-            {Object.entries(labelMap).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
+  const daysUntilPayDate = upcomingPayDate
+    ? Math.ceil(
+        (new Date(upcomingPayDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+      )
+    : null;
 
-          {/* 📄 Export Buttons */}
+  return (
+    <div className="space-y-6 max-w-7xl">
+      {/* Header */}
+      <div className="border-b pb-6">
+        <h1 className="text-4xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-2">Here&apos;s what&apos;s happening with your business</p>
+      </div>
+
+      {/* Top Actions */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value as PeriodOption)}
+          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {Object.entries(labelMap).map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex gap-2">
           <button
             onClick={exportCSV}
-            className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            Export CSV
+            <Download size={16} />
+            CSV
           </button>
           <button
             onClick={exportPDF}
-            className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
-            Export PDF
+            <Download size={16} />
+            PDF
           </button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="Income (excl. GST)" value={summary.income} color="green" />
-        <SummaryCard label="Expenses (excl. GST)" value={summary.expenses} color="red" />
-        <SummaryCard label="GST Payable" value={gstPayable} color="blue" />
-        <SummaryCard
-          label="Net Profit (pre-tax)"
-          value={netProfit}
-          color={netProfit >= 0 ? 'green' : 'red'}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center shadow-lg">
+              <DollarSign className="text-white" size={24} />
+            </div>
+            {summary.income > 0 && <TrendingUp className="text-blue-600" size={20} />}
+          </div>
+          <div className="text-sm text-blue-600 font-medium">Income (excl. GST)</div>
+          <div className="text-3xl font-bold text-blue-900 mt-1">
+            {summary.income.toLocaleString('en-AU', {
+              style: 'currency',
+              currency: 'AUD',
+              minimumFractionDigits: 0,
+            })}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-xl p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg">
+              <TrendingDown className="text-white" size={24} />
+            </div>
+          </div>
+          <div className="text-sm text-red-600 font-medium">Expenses (excl. GST)</div>
+          <div className="text-3xl font-bold text-red-900 mt-1">
+            {summary.expenses.toLocaleString('en-AU', {
+              style: 'currency',
+              currency: 'AUD',
+              minimumFractionDigits: 0,
+            })}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-amber-600 flex items-center justify-center shadow-lg">
+              <FileText className="text-white" size={24} />
+            </div>
+          </div>
+          <div className="text-sm text-amber-600 font-medium">GST Payable</div>
+          <div className="text-3xl font-bold text-amber-900 mt-1">
+            {gstPayable.toLocaleString('en-AU', {
+              style: 'currency',
+              currency: 'AUD',
+              minimumFractionDigits: 0,
+            })}
+          </div>
+        </div>
+
+        <div
+          className={`bg-gradient-to-br ${netProfit >= 0 ? 'from-green-50 to-green-100 border-green-200' : 'from-red-50 to-red-100 border-red-200'} border rounded-xl p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div
+              className={`w-12 h-12 rounded-full ${netProfit >= 0 ? 'bg-green-600' : 'bg-red-600'} flex items-center justify-center shadow-lg`}
+            >
+              {netProfit >= 0 ? (
+                <TrendingUp className="text-white" size={24} />
+              ) : (
+                <TrendingDown className="text-white" size={24} />
+              )}
+            </div>
+          </div>
+          <div
+            className={`text-sm ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'} font-medium`}
+          >
+            Net Profit
+          </div>
+          <div
+            className={`text-3xl font-bold ${netProfit >= 0 ? 'text-green-900' : 'text-red-900'} mt-1`}
+          >
+            {netProfit.toLocaleString('en-AU', {
+              style: 'currency',
+              currency: 'AUD',
+              minimumFractionDigits: 0,
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Payroll */}
-      <h2 className="text-lg font-semibold mt-6">Payroll Summary</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <SummaryCard label="Wages" value={summary.wages} color="gray" />
-        <SummaryCard label="PAYG Withheld" value={summary.payg} color="red" />
-        <SummaryCard label="Superannuation" value={summary.super} color="blue" />
+      {/* Action Items & Quick Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border rounded-xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="text-amber-500" size={20} />
+            <h3 className="font-semibold text-gray-900">Action Required</h3>
+          </div>
+          <div className="space-y-3">
+            {daysUntilPayDate && daysUntilPayDate <= 7 && (
+              <button
+                onClick={() => router.push('/dashboard/payroll')}
+                className="w-full p-4 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors text-left"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-medium text-gray-900">Next Pay Run</div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      Payment due in {daysUntilPayDate} days
+                    </div>
+                  </div>
+                  <ChevronRight className="text-blue-600" size={20} />
+                </div>
+              </button>
+            )}
+            <button
+              onClick={() => router.push('/dashboard/bas')}
+              className="w-full p-4 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors text-left"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-medium text-gray-900">BAS Reporting</div>
+                  <div className="text-sm text-gray-600 mt-1">Review quarterly GST summary</div>
+                </div>
+                <ChevronRight className="text-amber-600" size={20} />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white border rounded-xl p-6 shadow-sm">
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <CheckCircle2 className="text-green-500" size={20} />
+            Quick Stats
+          </h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                  <Users className="text-purple-600" size={20} />
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600">Active Employees</div>
+                  <div className="font-semibold text-gray-900">{employeeCount}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push('/dashboard/employees')}
+                className="text-blue-600 hover:text-blue-700"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+            <div className="flex justify-between p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-gray-600">PAYG Tax Withheld</span>
+              <span className="font-semibold text-gray-900">
+                {summary.payg.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                  minimumFractionDigits: 0,
+                })}
+              </span>
+            </div>
+            <div className="flex justify-between p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-gray-600">Super Contributions</span>
+              <span className="font-semibold text-gray-900">
+                {summary.super.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                  minimumFractionDigits: 0,
+                })}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Chart */}
-      <h2 className="text-lg font-semibold mt-6">Overview Chart</h2>
-      <div className="bg-white border rounded-lg shadow p-4 h-80">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip
-              formatter={(val: number) =>
-                val.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })
-              }
-            />
-            <Legend />
-            <Bar dataKey="value" fill="#2563eb" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border rounded-xl shadow-sm p-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Financial Overview</h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" stroke="#6b7280" />
+                <YAxis stroke="#6b7280" />
+                <Tooltip
+                  formatter={(val: number) =>
+                    val.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })
+                  }
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                />
+                <Legend />
+                <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white border rounded-xl shadow-sm p-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Expense Breakdown</h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={(props: PieLabelRenderProps) => {
+                    const percent = props.percent || 0;
+                    return `${props.name} ${((percent as number) * 100).toFixed(0)}%`;
+                  }}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(val: number) =>
+                    val.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })
+                  }
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function SummaryCard({
-  label,
-  value,
-  color = 'gray',
-}: {
-  label: string;
-  value: number;
-  color?: 'green' | 'red' | 'blue' | 'gray';
-}) {
-  const colorMap: Record<string, string> = {
-    green: 'text-green-700 bg-green-50 border-green-200',
-    red: 'text-red-700 bg-red-50 border-red-200',
-    blue: 'text-blue-700 bg-blue-50 border-blue-200',
-    gray: 'text-gray-700 bg-gray-50 border-gray-200',
-  };
+      {/* Payroll Summary */}
+      <div className="bg-white border rounded-xl shadow-sm p-6">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <Briefcase className="text-blue-600" size={20} />
+          Payroll Summary ({labelMap[period]})
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="text-sm text-purple-600 font-medium">Wages Paid</div>
+            <div className="text-2xl font-bold text-purple-900 mt-2">
+              {summary.wages.toLocaleString('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+                minimumFractionDigits: 0,
+              })}
+            </div>
+          </div>
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="text-sm text-red-600 font-medium">PAYG Withheld</div>
+            <div className="text-2xl font-bold text-red-900 mt-2">
+              {summary.payg.toLocaleString('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+                minimumFractionDigits: 0,
+              })}
+            </div>
+          </div>
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="text-sm text-blue-600 font-medium">Superannuation</div>
+            <div className="text-2xl font-bold text-blue-900 mt-2">
+              {summary.super.toLocaleString('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+                minimumFractionDigits: 0,
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
 
-  return (
-    <div className={`p-4 border rounded-lg shadow-sm ${colorMap[color]}`}>
-      <div className="text-sm text-gray-600">{label}</div>
-      <div className="text-xl font-semibold mt-1">
-        {value.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+      {/* Quick Actions Banner */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-lg">
+        <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <button
+            onClick={() => router.push('/dashboard/transactions')}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg p-4 transition-all hover:scale-105"
+          >
+            <Receipt className="mx-auto mb-2" size={24} />
+            <div className="text-sm font-medium">New Transaction</div>
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/payroll')}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg p-4 transition-all hover:scale-105"
+          >
+            <Users className="mx-auto mb-2" size={24} />
+            <div className="text-sm font-medium">Run Payroll</div>
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/employees')}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg p-4 transition-all hover:scale-105"
+          >
+            <Briefcase className="mx-auto mb-2" size={24} />
+            <div className="text-sm font-medium">Add Employee</div>
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/bas')}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 rounded-lg p-4 transition-all hover:scale-105"
+          >
+            <FileText className="mx-auto mb-2" size={24} />
+            <div className="text-sm font-medium">View BAS</div>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -7,9 +7,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
-      {/* Wrap all dashboard content inside the provider */}
       <OrgSettingsProvider>
-        <div className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1 md:pl-64">
           <Topbar />
           <main className="flex-1 p-6 overflow-y-auto">{children}</main>
 
@@ -20,9 +19,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             toastOptions={{
               classNames: {
                 toast:
-                  'border border-slate-200 shadow-md bg-white rounded-xl text-slate-800 font-medium',
+                  'border border-slate-200 shadow-lg bg-white rounded-xl text-slate-800 font-medium',
                 description: 'text-slate-600 text-sm mt-0.5',
-                actionButton: 'bg-primary text-white hover:bg-primary/90 transition-all rounded-md',
+                actionButton: 'bg-blue-600 text-white hover:bg-blue-700 transition-all rounded-lg',
               },
             }}
           />
