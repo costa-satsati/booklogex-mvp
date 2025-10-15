@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import type { Employee } from '@/types/employee';
+import type { Employee, EmploymentType, PayFrequency } from '@/types/employee';
 import { notify } from '@/lib/notify';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -233,7 +233,7 @@ export default function EditEmployeeModal({
                 </label>
                 <select
                   value={formData.employment_type || 'full_time'}
-                  onChange={(e) => updateField('employment_type', e.target.value)}
+                  onChange={(e) => updateField('employment_type', e.target.value as EmploymentType)}
                   className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="full_time">Full-time</option>
@@ -288,7 +288,7 @@ export default function EditEmployeeModal({
                 </label>
                 <select
                   value={formData.pay_frequency || 'fortnightly'}
-                  onChange={(e) => updateField('pay_frequency', e.target.value)}
+                  onChange={(e) => updateField('pay_frequency', e.target.value as PayFrequency)}
                   className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="fortnightly">Fortnightly</option>

@@ -265,7 +265,12 @@ export default function AddEmployeePage() {
               </label>
               <select
                 value={formData.employment_type}
-                onChange={(e) => updateField('employment_type', e.target.value)}
+                onChange={(e) =>
+                  updateField(
+                    'employment_type',
+                    e.target.value as EmployeeFormData['employment_type']
+                  )
+                }
                 className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="full_time">Full-time</option>
@@ -321,7 +326,9 @@ export default function AddEmployeePage() {
               </label>
               <select
                 value={formData.pay_frequency}
-                onChange={(e) => updateField('pay_frequency', e.target.value)}
+                onChange={(e) =>
+                  updateField('pay_frequency', e.target.value as EmployeeFormData['pay_frequency'])
+                }
                 className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="fortnightly">Fortnightly</option>

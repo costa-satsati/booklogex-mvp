@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { saveAs } from 'file-saver';
@@ -6,6 +7,18 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useOrgContext } from '@/context/OrgSettingsContext';
 import { notify } from '@/lib/notify';
+import {
+  Download,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Calendar,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 type Summary = {
   quarter: string;
@@ -27,8 +40,8 @@ export default function BASPage() {
   const [data, setData] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(true);
   const { settings: orgSettings } = useOrgContext();
+  const [selectedQuarter, setSelectedQuarter] = useState<string | null>(null);
 
-  // 🧮 Load and aggregate BAS data
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -45,7 +58,6 @@ export default function BASPage() {
           return;
         }
 
-        // Group by quarter (based on txn_date)
         const grouped: Record<string, Summary> = {};
 
         txns.forEach((t: Transaction) => {
@@ -79,6 +91,11 @@ export default function BASPage() {
         }));
 
         setData(result.sort((a, b) => (a.quarter > b.quarter ? -1 : 1)));
+
+        // Auto-select most recent quarter
+        if (result.length > 0 && !selectedQuarter) {
+          setSelectedQuarter(result[0].quarter);
+        }
       } catch (err: unknown) {
         console.error(err);
         const message = err instanceof Error ? err.message : String(err);
@@ -89,9 +106,8 @@ export default function BASPage() {
     };
 
     loadData();
-  }, []);
+  }, [selectedQuarter]);
 
-  // 📤 Export BAS data as CSV
   const exportCSV = () => {
     if (!data.length) return notify.info('No data to export.');
 
@@ -111,13 +127,11 @@ export default function BASPage() {
     notify.success('CSV exported successfully');
   };
 
-  // 📄 Export BAS data as PDF
   const exportPDF = () => {
     if (!data.length) return notify.info('No data to export.');
 
     const doc = new jsPDF();
 
-    // 🧾 Header
     doc.setFontSize(14);
     doc.text('Business Activity Statement (BAS) Summary', 14, 15);
 
@@ -133,7 +147,6 @@ export default function BASPage() {
 
     doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 180, 15, { align: 'right' });
 
-    // 📊 Table
     autoTable(doc, {
       startY: 35,
       head: [['Quarter', 'Income (AUD)', 'Expenses (AUD)', 'GST Collected', 'GST Paid', 'Net GST']],
@@ -146,10 +159,9 @@ export default function BASPage() {
         q.net_gst.toFixed(2),
       ]),
       styles: { fontSize: 10 },
-      headStyles: { fillColor: [25, 118, 210] },
+      headStyles: { fillColor: [37, 99, 235] },
     });
 
-    // 🖋️ Footer
     const pageHeight = doc.internal.pageSize.height;
     doc.setFontSize(8);
     doc.text(
@@ -162,66 +174,298 @@ export default function BASPage() {
     notify.success('PDF exported successfully');
   };
 
-  if (loading) return <div className="p-6 text-gray-500">Loading BAS summary...</div>;
+  const selectedData = data.find((q) => q.quarter === selectedQuarter);
+  const totalNetGST = data.reduce((sum, q) => sum + q.net_gst, 0);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading BAS summary...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-semibold">BAS Summary</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={exportCSV}
-            className="px-3 py-1.5 text-sm bg-gray-200 hover:bg-gray-300 rounded"
+    <div className="max-w-7xl space-y-6">
+      {/* Header */}
+      <div className="border-b pb-6">
+        <h1 className="text-4xl font-bold text-gray-900">BAS Summary</h1>
+        <p className="text-gray-600 mt-2">Business Activity Statement reporting</p>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center shadow-lg">
+              <FileText className="text-white" size={24} />
+            </div>
+          </div>
+          <div className="text-sm text-blue-600 font-medium">TotalQuarters</div>
+          <div className="text-3xl font-bold text-blue-900 mt-1">{data.length}</div>
+          <div className="text-xs text-blue-600 mt-2">Reporting periods</div>
+        </div>
+        <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center shadow-lg">
+              <TrendingUp className="text-white" size={24} />
+            </div>
+          </div>
+          <div className="text-sm text-green-600 font-medium">GST Collected (Total)</div>
+          <div className="text-3xl font-bold text-green-900 mt-1">
+            {data
+              .reduce((sum, q) => sum + q.gst_collected, 0)
+              .toLocaleString('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+                minimumFractionDigits: 0,
+              })}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-full bg-amber-600 flex items-center justify-center shadow-lg">
+              <TrendingDown className="text-white" size={24} />
+            </div>
+          </div>
+          <div className="text-sm text-amber-600 font-medium">GST Paid (Total)</div>
+          <div className="text-3xl font-bold text-amber-900 mt-1">
+            {data
+              .reduce((sum, q) => sum + q.gst_paid, 0)
+              .toLocaleString('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+                minimumFractionDigits: 0,
+              })}
+          </div>
+        </div>
+
+        <div
+          className={`bg-gradient-to-br ${totalNetGST >= 0 ? 'from-red-50 to-red-100 border-red-200' : 'from-purple-50 to-purple-100 border-purple-200'} border rounded-xl p-6`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div
+              className={`w-12 h-12 rounded-full ${totalNetGST >= 0 ? 'bg-red-600' : 'bg-purple-600'} flex items-center justify-center shadow-lg`}
+            >
+              <DollarSign className="text-white" size={24} />
+            </div>
+          </div>
+          <div
+            className={`text-sm ${totalNetGST >= 0 ? 'text-red-600' : 'text-purple-600'} font-medium`}
           >
-            Export CSV
-          </button>
-          <button
-            onClick={exportPDF}
-            className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+            Net GST (Total)
+          </div>
+          <div
+            className={`text-3xl font-bold ${totalNetGST >= 0 ? 'text-red-900' : 'text-purple-900'} mt-1`}
           >
-            Export PDF
-          </button>
+            {totalNetGST.toLocaleString('en-AU', {
+              style: 'currency',
+              currency: 'AUD',
+              minimumFractionDigits: 0,
+            })}
+          </div>
+          <div className={`text-xs ${totalNetGST >= 0 ? 'text-red-600' : 'text-purple-600'} mt-2`}>
+            {totalNetGST >= 0 ? 'Payable to ATO' : 'Refund from ATO'}
+          </div>
         </div>
       </div>
 
-      <table className="min-w-full bg-white border rounded shadow text-sm">
-        <thead className="bg-gray-100 text-gray-700">
-          <tr>
-            <th className="px-4 py-2 text-left">Quarter</th>
-            <th className="px-4 py-2 text-right">Income</th>
-            <th className="px-4 py-2 text-right">Expenses</th>
-            <th className="px-4 py-2 text-right">GST Collected</th>
-            <th className="px-4 py-2 text-right">GST Paid</th>
-            <th className="px-4 py-2 text-right">Net GST</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((q) => (
-            <tr key={q.quarter} className="border-t">
-              <td className="px-4 py-2">{q.quarter}</td>
-              <td className="px-4 py-2 text-right">
-                {q.income.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-              </td>
-              <td className="px-4 py-2 text-right">
-                {q.expense.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-              </td>
-              <td className="px-4 py-2 text-right text-green-700">
-                {q.gst_collected.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-              </td>
-              <td className="px-4 py-2 text-right text-red-700">
-                {q.gst_paid.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-              </td>
-              <td
-                className={`px-4 py-2 text-right font-semibold ${
-                  q.net_gst >= 0 ? 'text-red-700' : 'text-green-700'
-                }`}
+      {/* Quarter Selection and Actions */}
+      <div className="bg-white border rounded-lg shadow-sm p-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Calendar className="text-gray-600" size={20} />
+            <select
+              value={selectedQuarter || ''}
+              onChange={(e) => setSelectedQuarter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Quarters</option>
+              {data.map((q) => (
+                <option key={q.quarter} value={q.quarter}>
+                  {q.quarter}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCSV}
+              className="flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export CSV
+            </Button>
+            <Button
+              onClick={exportPDF}
+              size="sm"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+            >
+              <Download size={16} />
+              Export PDF
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Selected Quarter Detail */}
+      {selectedData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle2 className="text-blue-600" size={20} />
+            <h3 className="text-lg font-semibold text-blue-900">{selectedData.quarter} Details</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div>
+              <div className="text-sm text-blue-600">Income</div>
+              <div className="text-xl font-bold text-blue-900">
+                {selectedData.income.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-blue-600">Expenses</div>
+              <div className="text-xl font-bold text-blue-900">
+                {selectedData.expense.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-blue-600">GST Collected</div>
+              <div className="text-xl font-bold text-blue-900">
+                {selectedData.gst_collected.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-blue-600">GST Paid</div>
+              <div className="text-xl font-bold text-blue-900">
+                {selectedData.gst_paid.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                })}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-blue-600">Net GST Position</div>
+              <div
+                className={`text-2xl font-bold ${selectedData.net_gst >= 0 ? 'text-red-900' : 'text-green-900'}`}
               >
-                {q.net_gst.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                {selectedData.net_gst.toLocaleString('en-AU', {
+                  style: 'currency',
+                  currency: 'AUD',
+                })}
+                <span className="text-sm font-normal ml-2">
+                  {selectedData.net_gst >= 0 ? '(Payable)' : '(Refund)'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BAS Table */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-gray-600 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Quarter</th>
+                <th className="px-4 py-3 text-right font-medium">Income</th>
+                <th className="px-4 py-3 text-right font-medium">Expenses</th>
+                <th className="px-4 py-3 text-right font-medium">GST Collected</th>
+                <th className="px-4 py-3 text-right font-medium">GST Paid</th>
+                <th className="px-4 py-3 text-right font-medium">Net GST</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-12">
+                    <div className="text-gray-400 text-5xl mb-4">📊</div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No BAS data yet</h3>
+                    <p className="text-gray-600">Add transactions to generate BAS reports</p>
+                  </td>
+                </tr>
+              ) : (
+                data.map((q) => (
+                  <tr
+                    key={q.quarter}
+                    className={`border-b hover:bg-gray-50 transition-colors cursor-pointer ${
+                      selectedQuarter === q.quarter ? 'bg-blue-50' : ''
+                    }`}
+                    onClick={() => setSelectedQuarter(q.quarter)}
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">{q.quarter}</td>
+                    <td className="px-4 py-3 text-right">
+                      {q.income.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {q.expense.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                    </td>
+                    <td className="px-4 py-3 text-right text-green-700 font-medium">
+                      {q.gst_collected.toLocaleString('en-AU', {
+                        style: 'currency',
+                        currency: 'AUD',
+                      })}
+                    </td>
+                    <td className="px-4 py-3 text-right text-amber-700 font-medium">
+                      {q.gst_paid.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right font-semibold ${
+                        q.net_gst >= 0 ? 'text-red-700' : 'text-green-700'
+                      }`}
+                    >
+                      {q.net_gst.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* BAS Information */}
+      <div className="bg-white border rounded-lg shadow-sm p-6">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="text-blue-600 flex-shrink-0 mt-1" size={20} />
+          <div>
+            <h3 className="font-semibold text-gray-900 mb-2">About BAS Reporting</h3>
+            <div className="text-sm text-gray-600 space-y-2">
+              <p>
+                <strong>Quarterly BAS:</strong> Due 28 days after the end of each quarter (Oct 28,
+                Jan 28, Apr 28, Jul 28)
+              </p>
+              <p>
+                <strong>Monthly BAS:</strong> Due 21 days after the end of each month
+              </p>
+              <p>
+                <strong>GST Calculation:</strong> Net GST = GST Collected - GST Paid. If positive,
+                you owe the ATO. If negative, you receive a refund.
+              </p>
+              <p className="text-amber-700">
+                <strong>Important:</strong> Always verify your BAS with a registered tax agent
+                before lodging with the ATO.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
