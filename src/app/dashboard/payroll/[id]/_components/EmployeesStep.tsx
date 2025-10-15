@@ -308,7 +308,28 @@ export default function EmployeesStep({
                         type="number"
                         value={emp.hoursWorked}
                         onChange={(e) => {
-                          // TODO: Update hours and recalculate
+                          const newHours = parseFloat(e.target.value);
+                          const updated = employeesWithCalc.map((e) => {
+                            if (e.id === emp.id) {
+                              // Recalculate with new hours
+                              const hoursForPeriod =
+                                payrollRun.frequency === 'FORTNIGHTLY'
+                                  ? newHours * 2
+                                  : payrollRun.frequency === 'WEEKLY'
+                                    ? newHours
+                                    : newHours * 4.33;
+                              const newGross = emp.hourly_rate! * hoursForPeriod;
+                              const calculation = calculatePayroll({
+                                grossPay: newGross,
+                                payFrequency: payrollRun.frequency.toLowerCase() as any,
+                                hasTaxFreeThreshold: true,
+                                superRate: emp.super_rate / 100,
+                              });
+                              return { ...e, hoursWorked: newHours, calculated: calculation };
+                            }
+                            return e;
+                          });
+                          setEmployeesWithCalc(updated);
                         }}
                         className="w-32"
                         step="0.5"
