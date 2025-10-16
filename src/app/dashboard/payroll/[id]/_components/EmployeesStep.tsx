@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft, ChevronRight, Edit2, Loader2, Plus } from 'lucide-react';
 import { calculatePayroll } from '@/lib/tax-calculator';
 import type { Employee, PayrollRun, PayrollItem } from '@/types/payroll';
+import { PayFrequency } from '@/types/employee';
 
 interface Props {
   payrollRun: PayrollRun;
@@ -321,7 +322,7 @@ export default function EmployeesStep({
                               const newGross = emp.hourly_rate! * hoursForPeriod;
                               const calculation = calculatePayroll({
                                 grossPay: newGross,
-                                payFrequency: payrollRun.frequency.toLowerCase() as any,
+                                payFrequency: payrollRun.frequency.toLowerCase() as PayFrequency,
                                 hasTaxFreeThreshold: true,
                                 superRate: emp.super_rate / 100,
                               });

@@ -1,3 +1,4 @@
+// src/app/dashboard/transactions/page.tsx
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -5,19 +6,22 @@ import { supabase } from '@/lib/supabaseClient';
 import {
   Plus,
   Search,
-  Filter,
   Download,
   TrendingUp,
   TrendingDown,
   DollarSign,
-  Calendar,
-  Edit2,
-  Trash2,
-  Eye,
   Loader2,
   FileText,
+  Eye,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
-import AddTransactionModal from '@/components/AddTransactionModal';
+import {
+  AddTransactionModal,
+  ViewTransactionModal,
+  EditTransactionModal,
+  DeleteTransactionModal,
+} from '@/components/TransactionModals';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { notify } from '@/lib/notify';
@@ -30,9 +34,15 @@ type Transaction = {
   amount: number;
   gst_amount: number;
   type: 'income' | 'expense';
+  category: string;
+  payment_method?: string;
+  reference?: string;
+  notes?: string;
+  created_at?: string;
 };
 
 type FilterOption = 'this' | 'last' | 'thisQuarter' | 'lastQuarter' | 'all';
+type ModalState = 'add' | 'view' | 'edit' | 'delete' | null;
 
 const computeDateRange = (filter: FilterOption) => {
   const now = new Date();
@@ -67,7 +77,8 @@ const computeDateRange = (filter: FilterOption) => {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [modalState, setModalState] = useState<ModalState>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<FilterOption>('this');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -96,20 +107,22 @@ export default function TransactionsPage() {
     const { start, end } = dateRange;
 
     return transactions.filter((t) => {
-      // Date filter
       if (filter !== 'all') {
         if (!start || !end) return false;
         const txnDate = new Date(t.txn_date);
         if (txnDate < start || txnDate > end) return false;
       }
 
-      // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        if (!t.description.toLowerCase().includes(query)) return false;
+        if (
+          !t.description.toLowerCase().includes(query) &&
+          !t.category.toLowerCase().includes(query) &&
+          !t.reference?.toLowerCase().includes(query)
+        )
+          return false;
       }
 
-      // Type filter
       if (typeFilter !== 'all' && t.type !== typeFilter) return false;
 
       return true;
@@ -141,9 +154,9 @@ export default function TransactionsPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions' },
         (payload) => {
-          setTransactions((prev) => {
-            const { eventType, new: newRecord, old: oldRecord } = payload;
+          const { eventType, new: newRecord, old: oldRecord } = payload;
 
+          setTransactions((prev) => {
             switch (eventType) {
               case 'INSERT':
                 return [newRecord as Transaction, ...prev];
@@ -163,6 +176,53 @@ export default function TransactionsPage() {
       supabase.removeChannel(channel);
     };
   }, [loadTransactions]);
+
+  const handleView = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setModalState('view');
+  };
+
+  const handleEdit = async (updates: Partial<Transaction>) => {
+    if (!selectedTransaction) return;
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update(updates)
+        .eq('id', selectedTransaction.id);
+
+      if (error) throw error;
+
+      notify.success('Success', 'Transaction updated successfully');
+      setModalState(null);
+      setSelectedTransaction(null);
+    } catch (error) {
+      console.error('Update failed:', error);
+      notify.error('Error', error instanceof Error ? error.message : 'Failed...');
+      throw error;
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedTransaction) return;
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', selectedTransaction.id);
+
+      if (error) throw error;
+
+      notify.success('Success', 'Transaction deleted successfully');
+      setModalState(null);
+      setSelectedTransaction(null);
+    } catch (error) {
+      console.error('Delete failed:', error);
+      notify.error('Error', error instanceof Error ? error.message : 'Failed...');
+      throw error;
+    }
+  };
 
   const net = totals.income - totals.expense;
 
@@ -192,18 +252,31 @@ export default function TransactionsPage() {
 
   const exportCSV = () => {
     if (filteredTransactions.length === 0) {
-      notify.info('No data to export');
+      notify.info('No Data', 'No transactions to export');
       return;
     }
 
-    const headers = ['Date', 'Description', 'Type', 'Amount', 'GST', 'Total'];
+    const headers = [
+      'Date',
+      'Description',
+      'Type',
+      'Category',
+      'Amount (excl GST)',
+      'GST',
+      'Total',
+      'Payment Method',
+      'Reference',
+    ];
     const rows = filteredTransactions.map((t) => [
       t.txn_date,
       t.description,
       t.type,
+      t.category,
       t.amount.toFixed(2),
       t.gst_amount.toFixed(2),
       (t.amount + t.gst_amount).toFixed(2),
+      t.payment_method || '',
+      t.reference || '',
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -214,7 +287,6 @@ export default function TransactionsPage() {
 
   return (
     <div className="max-w-7xl space-y-6">
-      {/* Header */}
       <div className="border-b pb-6">
         <h1 className="text-4xl font-bold text-gray-900">Transactions</h1>
         <p className="text-gray-600 mt-2">Track your income and expenses</p>
@@ -310,7 +382,6 @@ export default function TransactionsPage() {
       {/* Filters and Actions */}
       <div className="bg-white border rounded-lg shadow-sm p-4">
         <div className="flex flex-col lg:flex-row gap-4">
-          {/* Search */}
           <div className="flex-1 relative">
             <Search
               className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
@@ -325,7 +396,6 @@ export default function TransactionsPage() {
             />
           </div>
 
-          {/* Period Filter */}
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterOption)}
@@ -338,7 +408,6 @@ export default function TransactionsPage() {
             <option value="all">All Time</option>
           </select>
 
-          {/* Type Filter */}
           <div className="flex gap-2">
             {[
               { key: 'all', label: 'All' },
@@ -359,7 +428,6 @@ export default function TransactionsPage() {
             ))}
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -371,7 +439,7 @@ export default function TransactionsPage() {
               Export
             </Button>
             <Button
-              onClick={() => setShowModal(true)}
+              onClick={() => setModalState('add')}
               size="sm"
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
             >
@@ -399,7 +467,10 @@ export default function TransactionsPage() {
                 : 'Add your first transaction to get started'}
             </p>
             {!searchQuery && typeFilter === 'all' && (
-              <Button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                onClick={() => setModalState('add')}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
                 <Plus size={18} className="mr-2" />
                 Add Your First Transaction
               </Button>
@@ -412,8 +483,9 @@ export default function TransactionsPage() {
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">Date</th>
                   <th className="px-4 py-3 text-left font-medium">Description</th>
+                  <th className="px-4 py-3 text-left font-medium">Category</th>
                   <th className="px-4 py-3 text-left font-medium">Type</th>
-                  <th className="px-4 py-3 text-right font-medium">Amount (excl GST)</th>
+                  <th className="px-4 py-3 text-right font-medium">Amount</th>
                   <th className="px-4 py-3 text-right font-medium">GST</th>
                   <th className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
@@ -429,7 +501,15 @@ export default function TransactionsPage() {
                         year: 'numeric',
                       })}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{t.description}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{t.description}</div>
+                      {t.reference && (
+                        <div className="text-xs text-gray-500">Ref: {t.reference}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-gray-600">{t.category}</span>
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -442,16 +522,10 @@ export default function TransactionsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {t.amount.toLocaleString('en-AU', {
-                        style: 'currency',
-                        currency: 'AUD',
-                      })}
+                      {t.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {t.gst_amount.toLocaleString('en-AU', {
-                        style: 'currency',
-                        currency: 'AUD',
-                      })}
+                      {t.gst_amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
                       {(t.amount + t.gst_amount).toLocaleString('en-AU', {
@@ -461,13 +535,31 @@ export default function TransactionsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                        <button
+                          onClick={() => handleView(t)}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="View details"
+                        >
                           <Eye size={16} />
                         </button>
-                        <button className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setModalState('edit');
+                          }}
+                          className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                          title="Edit"
+                        >
                           <Edit2 size={16} />
                         </button>
-                        <button className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setModalState('delete');
+                          }}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete"
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -480,14 +572,48 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* Transaction Count */}
       {filteredTransactions.length > 0 && (
         <div className="text-sm text-gray-500 text-center">
           Showing {filteredTransactions.length} of {transactions.length} transactions
         </div>
       )}
 
-      {showModal && <AddTransactionModal onClose={() => setShowModal(false)} />}
+      {/* Modals */}
+      {modalState === 'add' && <AddTransactionModal onClose={() => setModalState(null)} />}
+
+      {modalState === 'view' && selectedTransaction && (
+        <ViewTransactionModal
+          transaction={selectedTransaction}
+          onClose={() => {
+            setModalState(null);
+            setSelectedTransaction(null);
+          }}
+          onEdit={() => setModalState('edit')}
+          onDelete={() => setModalState('delete')}
+        />
+      )}
+
+      {modalState === 'edit' && selectedTransaction && (
+        <EditTransactionModal
+          transaction={selectedTransaction}
+          onClose={() => {
+            setModalState(null);
+            setSelectedTransaction(null);
+          }}
+          onSave={handleEdit}
+        />
+      )}
+
+      {modalState === 'delete' && selectedTransaction && (
+        <DeleteTransactionModal
+          transaction={selectedTransaction}
+          onClose={() => {
+            setModalState(null);
+            setSelectedTransaction(null);
+          }}
+          onConfirm={handleDelete}
+        />
+      )}
     </div>
   );
 }
