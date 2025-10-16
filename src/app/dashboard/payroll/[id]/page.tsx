@@ -1,15 +1,15 @@
-// src/app/dashboard/payroll/[id]/page.tsx (COMPLETE REPLACEMENT)
+// src/app/dashboard/payroll/[id]/page.tsx - FIXED VERSION
 'use client';
 
 import { use, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { notify } from '@/lib/notify';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PayrollRun, PayrollItem, Employee } from '@/types/payroll';
+import { useOrgContext } from '@/context/OrgSettingsContext';
 
-// Import step components (we'll create these next)
 import PayrollSteps from './_components/PayrollSteps';
 import SetupStep from './_components/SetupStep';
 import EmployeesStep from './_components/EmployeesStep';
@@ -19,8 +19,10 @@ import CompleteStep from './_components/CompleteStep';
 type PayrollStep = 'setup' | 'employees' | 'review' | 'complete';
 
 export default function ModernPayrollFlow({ params }: { params: Promise<{ id: string }> }) {
+  const { settings: orgSettings, loading: orgLoading } = useOrgContext();
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [currentStep, setCurrentStep] = useState<PayrollStep>('setup');
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
-  // Load payroll run, items, and employees
   useEffect(() => {
     loadPayrollData();
   }, [id]);
@@ -37,7 +38,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   const loadPayrollData = async () => {
     setLoading(true);
     try {
-      // Load payroll run
       const { data: runData, error: runError } = await supabase
         .from('payroll_runs')
         .select('*')
@@ -47,7 +47,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
       if (runError) throw runError;
       setPayrollRun(runData);
 
-      // Load payroll items
       const { data: itemsData, error: itemsError } = await supabase
         .from('payroll_items')
         .select('*, employees(full_name, email, position, tfn)')
@@ -57,7 +56,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
       setPayrollItems(itemsData || []);
       setSelectedEmployeeIds(itemsData?.map((item) => item.employee_id) || []);
 
-      // Load all active employees
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select('*')
@@ -68,13 +66,20 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
       if (employeesError) throw employeesError;
       setAllEmployees(employeesData || []);
 
-      // Determine which step to show based on status
-      if (runData.status === 'completed') {
+      // FIX: Determine step based on status AND query param
+      const stepParam = searchParams.get('step') as PayrollStep | null;
+
+      if (runData.status === 'finalized' || runData.status === 'completed') {
         setCurrentStep('complete');
+      } else if (stepParam && ['setup', 'employees', 'review'].includes(stepParam)) {
+        // Use query param if provided and valid
+        setCurrentStep(stepParam);
       } else if (itemsData && itemsData.length > 0) {
+        // Has items, go to review
         setCurrentStep('review');
       } else {
-        setCurrentStep('employees');
+        // New draft, start at setup
+        setCurrentStep('setup');
       }
     } catch (error) {
       console.error('Error loading payroll:', error);
@@ -85,7 +90,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   };
 
   const handleStepChange = (step: PayrollStep) => {
-    if (payrollRun?.status === 'completed') {
+    if (payrollRun?.status === 'finalized' || payrollRun?.status === 'completed') {
       notify.info('Pay run completed', 'This pay run cannot be edited');
       return;
     }
@@ -99,8 +104,16 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
 
   const handleFinalize = async () => {
     try {
-      const { error } = await supabase.rpc('finalize_payrun', { p_run: id });
-      if (error) throw error;
+      // Update status to finalized
+      const { error: updateError } = await supabase
+        .from('payroll_runs')
+        .update({
+          status: 'finalized',
+          finalized_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
 
       notify.success('Success', 'Pay run finalized successfully');
       setCurrentStep('complete');
@@ -130,11 +143,10 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
     );
   }
 
-  const isReadOnly = payrollRun.status === 'completed';
+  const isReadOnly = payrollRun.status === 'finalized' || payrollRun.status === 'completed';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-5xl mx-auto px-6 py-4">
           <Button
@@ -164,7 +176,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Progress Steps */}
       <div className="bg-white border-b">
         <div className="max-w-5xl mx-auto px-6 py-6">
           <PayrollSteps
@@ -175,7 +186,6 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Step Content */}
       <div className="max-w-5xl mx-auto px-6 py-8">
         {currentStep === 'setup' && (
           <SetupStep payrollRun={payrollRun} onContinue={() => setCurrentStep('employees')} />
@@ -207,6 +217,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
           <CompleteStep
             payrollRun={payrollRun}
             payrollItems={payrollItems}
+            orgSettings={orgSettings}
             onBackToDashboard={() => router.push('/dashboard/payroll')}
           />
         )}

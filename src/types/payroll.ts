@@ -54,6 +54,7 @@ export interface PayrollItem {
     full_name: string;
     email: string | null;
     position: string | null;
+    employment_type: string | null;
     tfn: string | null;
   };
 }
