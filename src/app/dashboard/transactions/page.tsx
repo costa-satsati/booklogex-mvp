@@ -5,34 +5,25 @@ import { supabase } from '@/lib/supabaseClient';
 import {
   Plus,
   Search,
-  Filter,
   Download,
   TrendingUp,
   TrendingDown,
   DollarSign,
-  Calendar,
-  Edit2,
-  Trash2,
-  Eye,
   Loader2,
   FileText,
+  Eye,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
-import AddTransactionModal from '@/components/AddTransactionModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { notify } from '@/lib/notify';
 import { saveAs } from 'file-saver';
-
-type Transaction = {
-  id: string;
-  txn_date: string;
-  description: string;
-  amount: number;
-  gst_amount: number;
-  type: 'income' | 'expense';
-};
+import type { Transaction } from '@/types/transaction';
+import TransactionModals from '@/components/TransactionModals';
 
 type FilterOption = 'this' | 'last' | 'thisQuarter' | 'lastQuarter' | 'all';
+type ModalState = 'add' | 'view' | 'edit' | 'delete' | null;
 
 const computeDateRange = (filter: FilterOption) => {
   const now = new Date();
@@ -67,7 +58,8 @@ const computeDateRange = (filter: FilterOption) => {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [modalState, setModalState] = useState<ModalState>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<FilterOption>('this');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -103,10 +95,13 @@ export default function TransactionsPage() {
         if (txnDate < start || txnDate > end) return false;
       }
 
-      // Search filter
+      // Search filter (include category and reference)
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        if (!t.description.toLowerCase().includes(query)) return false;
+        const matchesDescription = t.description.toLowerCase().includes(query);
+        const matchesCategory = t.category?.toLowerCase().includes(query);
+        const matchesReference = t.reference?.toLowerCase().includes(query);
+        if (!matchesDescription && !matchesCategory && !matchesReference) return false;
       }
 
       // Type filter
@@ -164,6 +159,61 @@ export default function TransactionsPage() {
     };
   }, [loadTransactions]);
 
+  const handleAdd = async (txn: Partial<Transaction>) => {
+    await loadTransactions();
+    setModalState(null);
+  };
+
+  const handleEdit = async (updates: Partial<Transaction>) => {
+    if (!selectedTransaction) return;
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update(updates)
+        .eq('id', selectedTransaction.id);
+
+      if (error) throw error;
+
+      await loadTransactions();
+      notify.success('Updated', 'Transaction updated successfully');
+      setModalState(null);
+      setSelectedTransaction(null);
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      notify.error(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to update transaction'
+      );
+      throw error;
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedTransaction) return;
+
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', selectedTransaction.id);
+
+      if (error) throw error;
+
+      await loadTransactions();
+      notify.success('Deleted', 'Transaction deleted successfully');
+      setModalState(null);
+      setSelectedTransaction(null);
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      notify.error(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to delete transaction'
+      );
+      throw error;
+    }
+  };
+
   const net = totals.income - totals.expense;
 
   const periodLabel = useMemo(() => {
@@ -196,11 +246,24 @@ export default function TransactionsPage() {
       return;
     }
 
-    const headers = ['Date', 'Description', 'Type', 'Amount', 'GST', 'Total'];
+    const headers = [
+      'Date',
+      'Description',
+      'Type',
+      'Category',
+      'Payment Method',
+      'Reference',
+      'Amount',
+      'GST',
+      'Total',
+    ];
     const rows = filteredTransactions.map((t) => [
       t.txn_date,
       t.description,
       t.type,
+      t.category || '',
+      t.payment_method || '',
+      t.reference || '',
       t.amount.toFixed(2),
       t.gst_amount.toFixed(2),
       (t.amount + t.gst_amount).toFixed(2),
@@ -318,7 +381,7 @@ export default function TransactionsPage() {
             />
             <Input
               type="text"
-              placeholder="Search transactions..."
+              placeholder="Search by description, category, or reference..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -371,7 +434,7 @@ export default function TransactionsPage() {
               Export
             </Button>
             <Button
-              onClick={() => setShowModal(true)}
+              onClick={() => setModalState('add')}
               size="sm"
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
             >
@@ -399,7 +462,10 @@ export default function TransactionsPage() {
                 : 'Add your first transaction to get started'}
             </p>
             {!searchQuery && typeFilter === 'all' && (
-              <Button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                onClick={() => setModalState('add')}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
                 <Plus size={18} className="mr-2" />
                 Add Your First Transaction
               </Button>
@@ -429,7 +495,12 @@ export default function TransactionsPage() {
                         year: 'numeric',
                       })}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{t.description}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{t.description}</div>
+                      {t.category && (
+                        <div className="text-xs text-gray-500 mt-0.5">{t.category}</div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -461,13 +532,34 @@ export default function TransactionsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setModalState('view');
+                          }}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          title="View details"
+                        >
                           <Eye size={16} />
                         </button>
-                        <button className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setModalState('edit');
+                          }}
+                          className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                          title="Edit transaction"
+                        >
                           <Edit2 size={16} />
                         </button>
-                        <button className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors">
+                        <button
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setModalState('delete');
+                          }}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete transaction"
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -487,7 +579,19 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {showModal && <AddTransactionModal onClose={() => setShowModal(false)} />}
+      {/* Modals */}
+      <TransactionModals
+        modalState={modalState}
+        selectedTransaction={selectedTransaction}
+        onClose={() => {
+          setModalState(null);
+          setSelectedTransaction(null);
+        }}
+        onAdd={handleAdd}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        onModalStateChange={(newState) => setModalState(newState)}
+      />
     </div>
   );
 }

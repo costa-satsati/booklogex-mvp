@@ -1,19 +1,33 @@
 // src/app/dashboard/payroll/[id]/_components/CompleteStep.tsx
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Download, Send, CheckCircle2 } from 'lucide-react';
+import { Download, Send, CheckCircle2, FileText, Loader2, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/tax-calculator';
+import { downloadAllPayslips, downloadEmployeePayslip } from '@/lib/payslip-generator';
+import { notify } from '@/lib/notify';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
+import type { OrganisationSettings } from '@/types/organisation';
+import type { Employee } from '@/types/employee';
 
 interface Props {
   payrollRun: PayrollRun;
   payrollItems: PayrollItem[];
+  orgSettings: OrganisationSettings | null;
   onBackToDashboard: () => void;
 }
 
-export default function CompleteStep({ payrollRun, payrollItems, onBackToDashboard }: Props) {
+export default function CompleteStep({
+  payrollRun,
+  payrollItems,
+  orgSettings,
+  onBackToDashboard,
+}: Props) {
+  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadingIndividual, setDownloadingIndividual] = useState<string | null>(null);
+
   const totals = payrollItems.reduce(
     (acc, item) => ({
       gross: acc.gross + item.gross,
@@ -26,8 +40,78 @@ export default function CompleteStep({ payrollRun, payrollItems, onBackToDashboa
 
   const processingId = `PR-${format(new Date(payrollRun.created_at), 'yyyyMMdd')}-${payrollRun.id.slice(0, 6).toUpperCase()}`;
 
+  const handleDownloadAll = async () => {
+    if (!orgSettings) {
+      notify.error('Settings Required', 'Please complete your organisation settings first');
+      return;
+    }
+
+    setDownloadingAll(true);
+    try {
+      await downloadAllPayslips(payrollRun, payrollItems, orgSettings);
+      notify.success(
+        'Payslips Downloaded',
+        `${payrollItems.length} payslip(s) downloaded successfully`
+      );
+    } catch (error) {
+      console.error('Error downloading payslips:', error);
+      notify.error(
+        'Download Failed',
+        error instanceof Error ? error.message : 'Failed to download payslips'
+      );
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
+
+  const handleDownloadIndividual = async (item: PayrollItem) => {
+    if (!item.employees) return;
+
+    if (!orgSettings) {
+      notify.error('Settings Required', 'Please complete your organisation settings first');
+      return;
+    }
+
+    setDownloadingIndividual(item.id);
+    try {
+      // Cast to Employee type - should have all fields from the query
+      const employee = item.employees as Employee;
+      await downloadEmployeePayslip(payrollRun, item, employee, orgSettings);
+      notify.success('Payslip Downloaded', `${employee.full_name}'s payslip downloaded`);
+    } catch (error) {
+      console.error('Error downloading payslip:', error);
+      notify.error(
+        'Download Failed',
+        error instanceof Error ? error.message : 'Failed to download payslip'
+      );
+    } finally {
+      setDownloadingIndividual(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Settings Warning */}
+      {!orgSettings && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-6 flex items-start gap-4">
+          <AlertCircle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-amber-900 mb-2">Organisation Settings Required</h3>
+            <p className="text-sm text-amber-700 mb-3">
+              To download payslips, please complete your organisation settings first. This includes
+              your business name, ABN, and contact details that will appear on payslips.
+            </p>
+            <Button
+              onClick={() => (window.location.href = '/dashboard/settings')}
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Go to Settings
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Success Banner */}
       <div className="bg-green-50 border-2 border-green-300 rounded-lg p-8 text-center">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
@@ -81,9 +165,9 @@ export default function CompleteStep({ payrollRun, payrollItems, onBackToDashboa
               1
             </div>
             <div>
-              <div className="font-medium text-gray-900">Payslips sent today</div>
+              <div className="font-medium text-gray-900">Payslips ready to download</div>
               <div className="text-sm text-gray-600 mt-1">
-                Digital copies will be emailed to each employee within the next hour
+                Download individual or all payslips below and distribute to employees
               </div>
             </div>
           </div>
@@ -159,34 +243,87 @@ export default function CompleteStep({ payrollRun, payrollItems, onBackToDashboa
         </div>
       </div>
 
-      {/* Documents */}
+      {/* Payslips Section */}
       <div className="bg-white border rounded-lg p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Documents</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <FileText className="h-5 w-5 text-blue-600" />
+            Employee Payslips
+          </h3>
+          <Button
+            onClick={handleDownloadAll}
+            disabled={downloadingAll}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {downloadingAll ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download All ({payrollItems.length})
+              </>
+            )}
+          </Button>
+        </div>
+
         <div className="space-y-2">
-          {[
-            { icon: '📋', title: 'Pay Run Summary Report', size: '240 KB' },
-            { icon: '📊', title: 'STP Report (ATO)', size: '156 KB' },
-            { icon: '💰', title: 'Payment Confirmation', size: '89 KB' },
-            ...payrollItems.map((item, i) => ({
-              icon: '📑',
-              title: `${item.employees?.full_name || 'Employee'} Payslip`,
-              size: '180 KB',
-            })),
-          ].map((doc, i) => (
-            <button
-              key={i}
-              className="w-full flex items-center justify-between p-3 bg-gray-50 rounded border hover:bg-blue-50 hover:border-blue-300 transition-colors"
+          {payrollItems.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border hover:bg-blue-50 hover:border-blue-300 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{doc.icon}</span>
-                <div className="text-left">
-                  <div className="font-medium text-gray-900 text-sm">{doc.title}</div>
-                  <div className="text-xs text-gray-600">{doc.size}</div>
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">
+                  {item.employees?.full_name
+                    ?.split(' ')
+                    .map((n) => n[0])
+                    .join('') || '??'}
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">
+                    {item.employees?.full_name || 'Unknown Employee'}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Net: {formatCurrency(item.net)}
+                    {item.employees?.employment_type === 'contractor' && (
+                      <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">
+                        Contractor
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <Download size={18} className="text-gray-400" />
-            </button>
+              <Button
+                onClick={() => handleDownloadIndividual(item)}
+                disabled={downloadingIndividual === item.id}
+                size="sm"
+                variant="outline"
+              >
+                {downloadingIndividual === item.id ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </>
+                )}
+              </Button>
+            </div>
           ))}
+        </div>
+
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-900">
+            <strong>💡 Tip:</strong> Payslips are generated as individual PDF files. You can email
+            them to employees or share via your preferred method.
+          </p>
         </div>
       </div>
 
@@ -205,7 +342,7 @@ export default function CompleteStep({ payrollRun, payrollItems, onBackToDashboa
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
         <p className="text-sm text-blue-900">
           Need help? Contact support or visit our{' '}
-          <a href="#" className="font-medium underline">
+          <a href="#" className="font-medium underline hover:text-blue-700">
             payroll guide
           </a>
         </p>

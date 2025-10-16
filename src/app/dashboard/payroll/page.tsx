@@ -1,4 +1,4 @@
-// src/app/dashboard/payroll/page.tsx
+// src/app/dashboard/payroll/page.tsx - IMPROVED VERSION
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -13,19 +13,23 @@ import {
   CheckCircle2,
   Calendar,
   DollarSign,
+  Trash2,
+  Edit2,
+  MoreVertical,
 } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { format, differenceInDays, startOfWeek, endOfWeek, addDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/tax-calculator';
-import type { PayrollRun } from '@/types/payroll'; // ✅ Import instead of redefine
+import type { PayrollRun } from '@/types/payroll';
 
 export default function PayrollPage() {
   const router = useRouter();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false); // ✅ New state
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [stats, setStats] = useState({
     activeEmployees: 0,
     ytdPayroll: 0,
@@ -42,7 +46,7 @@ export default function PayrollPage() {
 
     if (error) {
       console.error(error);
-      notify.error('Failed to load payroll runs', error.message);
+      notify.error('Error', 'Failed to load payroll runs');
     } else {
       setRuns(data || []);
       calculateStats(data || []);
@@ -76,53 +80,43 @@ export default function PayrollPage() {
     });
   };
 
-  // ✅ NEW: Create pay run directly and navigate to modern flow
-  const handleCreatePayRun = async () => {
+  // NEW: Delete draft pay run
+  const handleDeleteDraft = async (runId: string) => {
+    setDeletingId(runId);
+    try {
+      // First delete all payroll items
+      const { error: itemsError } = await supabase
+        .from('payroll_items')
+        .delete()
+        .eq('payroll_run_id', runId);
+
+      if (itemsError) throw itemsError;
+
+      // Then delete the pay run
+      const { error: runError } = await supabase.from('payroll_runs').delete().eq('id', runId);
+
+      if (runError) throw runError;
+
+      notify.success('Deleted', 'Draft pay run deleted successfully');
+      setShowDeleteConfirm(null);
+      await loadRuns();
+    } catch (error) {
+      console.error('Error deleting draft:', error);
+      notify.error('Error', 'Failed to delete draft pay run');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // IMPROVED: Create pay run with modal/wizard instead of direct creation
+  const handleCreatePayRun = () => {
     if (!orgId) {
-      notify.error('Error', 'Organization not found');
+      notify.error('Error', 'Organisation not found');
       return;
     }
 
-    setCreating(true);
-    try {
-      // Calculate default dates (fortnightly from this week)
-      const today = new Date();
-      const periodStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
-      const periodEnd = endOfWeek(addDays(periodStart, 13), { weekStartsOn: 1 }); // 2 weeks
-      const payDate = addDays(periodEnd, 3); // 3 days after period end
-
-      // Create pay run
-      const { data, error } = await supabase
-        .from('payroll_runs')
-        .insert([
-          {
-            org_id: orgId,
-            frequency: 'FORTNIGHTLY',
-            pay_period_start: format(periodStart, 'yyyy-MM-dd'),
-            pay_period_end: format(periodEnd, 'yyyy-MM-dd'),
-            pay_date: format(payDate, 'yyyy-MM-dd'),
-            status: 'draft',
-            total_gross: 0,
-            total_tax: 0,
-            total_super: 0,
-            total_net: 0,
-          },
-        ])
-        .select('id')
-        .single();
-
-      if (error) throw error;
-
-      notify.success('Pay run created', 'Redirecting to setup...');
-
-      // Navigate directly to modern workflow
-      router.push(`/dashboard/payroll/${data.id}`);
-    } catch (error) {
-      console.error('Error creating pay run:', error);
-      notify.error('Error', 'Failed to create pay run');
-    } finally {
-      setCreating(false);
-    }
+    // Navigate to setup wizard (we'll create a new route for this)
+    router.push('/dashboard/payroll/new');
   };
 
   useEffect(() => {
@@ -132,13 +126,13 @@ export default function PayrollPage() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: org } = await supabase
-        .from('organisations')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .single();
 
-      if (org) setOrgId(org.id);
+      if (profile?.org_id) setOrgId(profile.org_id);
     })();
 
     loadRuns();
@@ -157,22 +151,13 @@ export default function PayrollPage() {
             <p className="text-gray-600 mt-2">Manage payroll runs and track payments</p>
           </div>
           <Button
-            onClick={handleCreatePayRun} // ✅ Direct creation
-            disabled={!orgId || creating}
+            onClick={handleCreatePayRun}
+            disabled={!orgId}
             size="lg"
             className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
           >
-            {creating ? (
-              <>
-                <Loader2 size={20} className="mr-2 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <Plus size={20} className="mr-2" />
-                Create Pay Run
-              </>
-            )}
+            <Plus size={20} className="mr-2" />
+            Create Pay Run
           </Button>
         </div>
 
@@ -227,17 +212,56 @@ export default function PayrollPage() {
           </div>
         </div>
 
-        {/* Action Cards for Drafts */}
+        {/* Draft Pay Runs with Actions */}
         {draftRuns.length > 0 && (
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Draft Pay Runs</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {draftRuns.map((run) => (
-                <button
+                <div
                   key={run.id}
-                  onClick={() => router.push(`/dashboard/payroll/${run.id}`)}
-                  className="bg-white border-2 border-blue-200 rounded-lg p-6 hover:shadow-lg transition-all text-left group"
+                  className="bg-white border-2 border-blue-200 rounded-lg p-6 hover:shadow-lg transition-all group relative"
                 >
+                  {/* Delete Confirmation Overlay */}
+                  {showDeleteConfirm === run.id && (
+                    <div className="absolute inset-0 bg-white/95 rounded-lg flex items-center justify-center z-10 p-6">
+                      <div className="text-center">
+                        <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-3" />
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Draft?</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                          This will permanently delete this draft pay run. This action cannot be
+                          undone.
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowDeleteConfirm(null)}
+                            className="flex-1"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleDeleteDraft(run.id)}
+                            disabled={deletingId === run.id}
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                          >
+                            {deletingId === run.id ? (
+                              <>
+                                <Loader2 size={14} className="mr-1 animate-spin" />
+                                Deleting...
+                              </>
+                            ) : (
+                              'Delete'
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Draft Card Content */}
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
@@ -270,11 +294,30 @@ export default function PayrollPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-blue-600 group-hover:translate-x-1 transition-transform text-2xl">
-                      →
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => router.push(`/dashboard/payroll/${run.id}`)}
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      >
+                        <Edit2 size={14} className="mr-1" />
+                        Continue
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setShowDeleteConfirm(run.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 size={14} className="mr-1" />
+                        Delete
+                      </Button>
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -305,20 +348,11 @@ export default function PayrollPage() {
               </p>
               <Button
                 onClick={handleCreatePayRun}
-                disabled={!orgId || creating}
+                disabled={!orgId}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {creating ? (
-                  <>
-                    <Loader2 size={18} className="mr-2 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Plus size={18} className="mr-2" />
-                    Create Your First Pay Run
-                  </>
-                )}
+                <Plus size={18} className="mr-2" />
+                Create Your First Pay Run
               </Button>
             </div>
           ) : (
@@ -326,28 +360,28 @@ export default function PayrollPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Period
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Pay Date
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                       Gross
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                       Tax
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                       Super
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                       Net
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                       Actions
                     </th>
                   </tr>
@@ -377,9 +411,7 @@ export default function PayrollPage() {
                             'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium',
                             run.status === 'finalized' || run.status === 'completed'
                               ? 'bg-green-100 text-green-700'
-                              : run.status === 'draft'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-gray-100 text-gray-700'
+                              : 'bg-gray-100 text-gray-700'
                           )}
                         >
                           {(run.status === 'finalized' || run.status === 'completed') && (
