@@ -837,3 +837,65 @@ export function DeleteTransactionModal({
     </div>
   );
 }
+
+// ==================== WRAPPER COMPONENT (DEFAULT EXPORT) ====================
+interface TransactionModalsProps {
+  modalState: 'add' | 'view' | 'edit' | 'delete' | null;
+  selectedTransaction: Transaction | null;
+  onClose: () => void;
+  onAdd: (txn: Partial<Transaction>) => Promise<void>;
+  onEdit: (updates: Partial<Transaction>) => Promise<void>;
+  onDelete: () => Promise<void>;
+  onModalStateChange?: (newState: 'edit' | 'delete') => void;
+}
+
+export default function TransactionModals({
+  modalState,
+  selectedTransaction,
+  onClose,
+  onAdd,
+  onEdit,
+  onDelete,
+  onModalStateChange,
+}: TransactionModalsProps) {
+  if (modalState === 'add') {
+    return <AddTransactionModal onClose={onClose} />;
+  }
+
+  if (modalState === 'view' && selectedTransaction) {
+    return (
+      <ViewTransactionModal
+        transaction={selectedTransaction}
+        onClose={onClose}
+        onEdit={() => {
+          if (onModalStateChange) {
+            onModalStateChange('edit');
+          }
+        }}
+        onDelete={() => {
+          if (onModalStateChange) {
+            onModalStateChange('delete');
+          }
+        }}
+      />
+    );
+  }
+
+  if (modalState === 'edit' && selectedTransaction) {
+    return (
+      <EditTransactionModal transaction={selectedTransaction} onClose={onClose} onSave={onEdit} />
+    );
+  }
+
+  if (modalState === 'delete' && selectedTransaction) {
+    return (
+      <DeleteTransactionModal
+        transaction={selectedTransaction}
+        onClose={onClose}
+        onConfirm={onDelete}
+      />
+    );
+  }
+
+  return null;
+}
