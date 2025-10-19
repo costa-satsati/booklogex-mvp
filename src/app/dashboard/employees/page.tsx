@@ -21,6 +21,7 @@ import {
 import { notify } from '@/lib/notify';
 import { formatCurrency } from '@/lib/tax-calculator';
 import type { Employee } from '@/types/employee';
+import { useOrgContext } from '@/context/OrgContext';
 
 export default function EmployeesPage() {
   const router = useRouter();
@@ -36,14 +37,17 @@ export default function EmployeesPage() {
     contractors: 0,
     avgSalary: 0,
   });
+  const { organisation, loading: orgLoading } = useOrgContext();
 
   // Load employees
   const loadEmployees = async () => {
+    if (!organisation?.id) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('employees')
         .select('*')
+        .eq('org_id', organisation.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

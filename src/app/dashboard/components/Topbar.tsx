@@ -5,7 +5,7 @@ import { Menu, Bell, Search, ChevronDown, LogOut, User, X } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { useOrgContext } from '@/context/OrgSettingsContext';
+import { useOrgContext } from '@/context/OrgContext';
 import { notify } from '@/lib/notify';
 import { Home, Receipt, Users, Settings, FileText, Briefcase } from 'lucide-react';
 
@@ -21,7 +21,7 @@ const navItems = [
 export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
-  const { settings, loading } = useOrgContext();
+  const { organisation, loading } = useOrgContext();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userName, setUserName] = useState<string>('User');
@@ -41,8 +41,8 @@ export function Topbar() {
   });
 
   // Format ABN
-  const formattedAbn = settings?.abn
-    ? settings.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')
+  const formattedAbn = organisation?.abn
+    ? organisation.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')
     : null;
 
   const handleSignOut = async () => {
@@ -55,7 +55,7 @@ export function Topbar() {
     }
   };
 
-  if (!settings && loading) return <header className="h-16 border-b bg-white shadow-sm" />;
+  if (!organisation && loading) return <header className="h-16 border-b bg-white shadow-sm" />;
 
   return (
     <>
@@ -71,9 +71,9 @@ export function Topbar() {
             </button>
 
             <div className="hidden md:block" suppressHydrationWarning>
-              {settings?.business_name ? (
+              {organisation?.name ? (
                 <>
-                  <div className="text-sm font-medium text-gray-900">{settings.business_name}</div>
+                  <div className="text-sm font-medium text-gray-900">{organisation.name}</div>
                   {formattedAbn && <div className="text-xs text-gray-500">ABN {formattedAbn}</div>}
                 </>
               ) : (

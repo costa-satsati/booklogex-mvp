@@ -22,12 +22,13 @@ import { format, differenceInDays, startOfWeek, endOfWeek, addDays } from 'date-
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/tax-calculator';
 import type { PayrollRun } from '@/types/payroll';
+import { useOrgContext } from '@/context/OrgContext';
 
 export default function PayrollPage() {
   const router = useRouter();
+  const { organisation, loading: orgLoading } = useOrgContext();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
-  const [orgId, setOrgId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [stats, setStats] = useState({
@@ -38,10 +39,13 @@ export default function PayrollPage() {
   });
 
   const loadRuns = async () => {
+    if (!organisation?.id) return;
+
     setLoading(true);
     const { data, error } = await supabase
       .from('payroll_runs')
       .select('*')
+      .eq('org_id', organisation.id) // ← Use from context
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -55,6 +59,8 @@ export default function PayrollPage() {
   };
 
   const calculateStats = async (payrollRuns: PayrollRun[]) => {
+    if (!organisation?.id) return;
+
     const ytd = payrollRuns
       .filter((r) => r.status === 'finalized' || r.status === 'completed')
       .reduce((sum, r) => sum + (r.total_gross || 0), 0);
@@ -70,6 +76,7 @@ export default function PayrollPage() {
     const { count } = await supabase
       .from('employees')
       .select('id', { count: 'exact', head: true })
+      .eq('org_id', organisation.id)
       .eq('active', true);
 
     setStats({
@@ -110,7 +117,7 @@ export default function PayrollPage() {
 
   // IMPROVED: Create pay run with modal/wizard instead of direct creation
   const handleCreatePayRun = () => {
-    if (!orgId) {
+    if (!organisation?.id) {
       notify.error('Error', 'Organisation not found');
       return;
     }
@@ -119,24 +126,34 @@ export default function PayrollPage() {
     router.push('/dashboard/payroll/new');
   };
 
+  // Load runs when organisation is available
   useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+    if (organisation?.id) {
+      loadRuns();
+    }
+  }, [organisation?.id]);
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('org_id')
-        .eq('id', user.id)
-        .single();
+  // Show loading state while org is loading
+  if (orgLoading || loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
-      if (profile?.org_id) setOrgId(profile.org_id);
-    })();
-
-    loadRuns();
-  }, []);
+  // Show error if no organisation
+  if (!organisation) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Organisation Not Found</h2>
+          <p className="text-gray-600">Please complete your organisation setup first.</p>
+        </div>
+      </div>
+    );
+  }
 
   const draftRuns = runs.filter((r) => r.status === 'draft');
   const completedRuns = runs.filter((r) => r.status === 'finalized' || r.status === 'completed');
@@ -152,7 +169,7 @@ export default function PayrollPage() {
           </div>
           <Button
             onClick={handleCreatePayRun}
-            disabled={!orgId}
+            disabled={!organisation?.id}
             size="lg"
             className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
           >
@@ -348,7 +365,7 @@ export default function PayrollPage() {
               </p>
               <Button
                 onClick={handleCreatePayRun}
-                disabled={!orgId}
+                disabled={!organisation?.id}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus size={18} className="mr-2" />

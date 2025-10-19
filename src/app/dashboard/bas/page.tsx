@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useOrgContext } from '@/context/OrgSettingsContext';
+import { useOrgContext } from '@/context/OrgContext';
 import { notify } from '@/lib/notify';
 import {
   Download,
@@ -39,7 +39,7 @@ type Transaction = {
 export default function BASPage() {
   const [data, setData] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(true);
-  const { settings: orgSettings } = useOrgContext();
+  const { organisation: OrgContext } = useOrgContext();
   const [selectedQuarter, setSelectedQuarter] = useState<string | null>(null);
 
   useEffect(() => {
@@ -136,10 +136,10 @@ export default function BASPage() {
     doc.text('Business Activity Statement (BAS) Summary', 14, 15);
 
     doc.setFontSize(10);
-    if (orgSettings) {
-      const orgName = orgSettings.business_name ?? 'Your Organisation';
-      const abn = orgSettings.abn
-        ? orgSettings.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')
+    if (OrgContext) {
+      const orgName = OrgContext.name ?? 'Your Organisation';
+      const abn = OrgContext.abn
+        ? OrgContext.abn.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4')
         : '';
       doc.text(`Organisation: ${orgName}`, 14, 22);
       if (abn) doc.text(`ABN: ${abn}`, 14, 28);

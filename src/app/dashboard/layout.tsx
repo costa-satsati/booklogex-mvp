@@ -1,13 +1,13 @@
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { Toaster } from '@/components/ui/sonner';
-import { OrgSettingsProvider } from '@/context/OrgSettingsContext';
+import { OrgProvider } from '@/context/OrgContext';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
-      <OrgSettingsProvider>
+      <OrgProvider>
         <div className="flex flex-col flex-1 md:pl-64">
           <Topbar />
           <main className="flex-1 p-6 overflow-y-auto">{children}</main>
@@ -26,7 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             }}
           />
         </div>
-      </OrgSettingsProvider>
+      </OrgProvider>
     </div>
   );
 }

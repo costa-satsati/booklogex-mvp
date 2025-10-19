@@ -9,20 +9,20 @@ import { formatCurrency } from '@/lib/tax-calculator';
 import { downloadAllPayslips, downloadEmployeePayslip } from '@/lib/payslip-generator';
 import { notify } from '@/lib/notify';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
-import type { OrganisationSettings } from '@/types/organisation';
+import type { Organisation } from '@/types/organisation';
 import type { Employee } from '@/types/employee';
 
 interface Props {
   payrollRun: PayrollRun;
   payrollItems: PayrollItem[];
-  orgSettings: OrganisationSettings | null;
+  OrgContext: Organisation | null;
   onBackToDashboard: () => void;
 }
 
 export default function CompleteStep({
   payrollRun,
   payrollItems,
-  orgSettings,
+  OrgContext,
   onBackToDashboard,
 }: Props) {
   const [downloadingAll, setDownloadingAll] = useState(false);
@@ -41,14 +41,14 @@ export default function CompleteStep({
   const processingId = `PR-${format(new Date(payrollRun.created_at), 'yyyyMMdd')}-${payrollRun.id.slice(0, 6).toUpperCase()}`;
 
   const handleDownloadAll = async () => {
-    if (!orgSettings) {
+    if (!OrgContext) {
       notify.error('Settings Required', 'Please complete your organisation settings first');
       return;
     }
 
     setDownloadingAll(true);
     try {
-      await downloadAllPayslips(payrollRun, payrollItems, orgSettings);
+      await downloadAllPayslips(payrollRun, payrollItems, OrgContext);
       notify.success(
         'Payslips Downloaded',
         `${payrollItems.length} payslip(s) downloaded successfully`
@@ -67,7 +67,7 @@ export default function CompleteStep({
   const handleDownloadIndividual = async (item: PayrollItem) => {
     if (!item.employees) return;
 
-    if (!orgSettings) {
+    if (!OrgContext) {
       notify.error('Settings Required', 'Please complete your organisation settings first');
       return;
     }
@@ -76,7 +76,7 @@ export default function CompleteStep({
     try {
       // Cast to Employee type - should have all fields from the query
       const employee = item.employees as Employee;
-      await downloadEmployeePayslip(payrollRun, item, employee, orgSettings);
+      await downloadEmployeePayslip(payrollRun, item, employee, OrgContext);
       notify.success('Payslip Downloaded', `${employee.full_name}'s payslip downloaded`);
     } catch (error) {
       console.error('Error downloading payslip:', error);
@@ -92,7 +92,7 @@ export default function CompleteStep({
   return (
     <div className="space-y-6">
       {/* Settings Warning */}
-      {!orgSettings && (
+      {!OrgContext && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-6 flex items-start gap-4">
           <AlertCircle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
           <div>

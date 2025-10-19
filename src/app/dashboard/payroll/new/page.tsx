@@ -21,46 +21,22 @@ import {
   isBefore,
   isAfter,
 } from 'date-fns';
+import { useOrgContext } from '@/context/OrgContext';
 
 type Frequency = 'WEEKLY' | 'FORTNIGHTLY' | 'MONTHLY';
 
 export default function NewPayrollWizard() {
   const router = useRouter();
-  const [orgId, setOrgId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [overlapError, setOverlapError] = useState<string | null>(null);
-
+  const { organisation, loading: orgLoading } = useOrgContext();
   const [form, setForm] = useState({
     frequency: 'FORTNIGHTLY' as Frequency,
     periodStart: '',
     periodEnd: '',
     payDate: '',
   });
-
-  // Load org_id
-  useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('org_id')
-        .eq('id', user.id)
-        .single();
-
-      if (profile?.org_id) {
-        setOrgId(profile.org_id);
-        calculateDefaultDates('FORTNIGHTLY');
-      }
-    })();
-  }, [router]);
 
   // Calculate default dates based on frequency
   const calculateDefaultDates = (frequency: Frequency) => {
@@ -100,9 +76,27 @@ export default function NewPayrollWizard() {
     setOverlapError(null);
   };
 
+  // Initialize default dates
+  useEffect(() => {
+    if (organisation?.id) {
+      calculateDefaultDates('FORTNIGHTLY');
+    }
+  }, [organisation?.id]);
+
+  // Auto-check overlap when dates change
+  useEffect(() => {
+    if (form.periodStart && form.periodEnd) {
+      const timer = setTimeout(() => {
+        checkOverlap();
+      }, 500); // Debounce
+
+      return () => clearTimeout(timer);
+    }
+  }, [form.periodStart, form.periodEnd]);
+
   // Check for overlapping pay runs
   const checkOverlap = async () => {
-    if (!orgId || !form.periodStart || !form.periodEnd) return;
+    if (!organisation || !form.periodStart || !form.periodEnd) return;
 
     setChecking(true);
     setOverlapError(null);
@@ -111,7 +105,7 @@ export default function NewPayrollWizard() {
       const { data, error } = await supabase
         .from('payroll_runs')
         .select('id, pay_period_start, pay_period_end, frequency')
-        .eq('org_id', orgId)
+        .eq('org_id', organisation?.id)
         .neq('status', 'cancelled');
 
       if (error) throw error;
@@ -178,7 +172,7 @@ export default function NewPayrollWizard() {
       return;
     }
 
-    if (!orgId) {
+    if (!organisation?.id) {
       notify.error('Error', 'Organisation not found');
       return;
     }
@@ -190,7 +184,7 @@ export default function NewPayrollWizard() {
         .from('payroll_runs')
         .insert([
           {
-            org_id: orgId,
+            org_id: organisation?.id,
             frequency: form.frequency,
             pay_period_start: form.periodStart,
             pay_period_end: form.periodEnd,
@@ -200,7 +194,7 @@ export default function NewPayrollWizard() {
             total_tax: 0,
             total_super: 0,
             total_net: 0,
-            idempotency_key: `${orgId}:${form.periodStart}:${form.periodEnd}`,
+            idempotency_key: `${organisation?.id}:${form.periodStart}:${form.periodEnd}`,
           },
         ])
         .select('id')
@@ -225,16 +219,35 @@ export default function NewPayrollWizard() {
     }
   };
 
-  // Auto-check overlap when dates change
-  useEffect(() => {
-    if (form.periodStart && form.periodEnd) {
-      const timer = setTimeout(() => {
-        checkOverlap();
-      }, 500); // Debounce
+  if (orgLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
-      return () => clearTimeout(timer);
-    }
-  }, [form.periodStart, form.periodEnd]);
+  // Check if business setup is complete
+  if (!organisation?.name) {
+    return (
+      <div className="max-w-2xl mx-auto mt-12">
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-8 text-center">
+          <AlertCircle className="mx-auto mb-4 text-amber-600" size={48} />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Business Setup Required</h2>
+          <p className="text-gray-600 mb-6">
+            Please complete your business details before running payroll. We need your business name
+            for payslips and compliance.
+          </p>
+          <Button
+            onClick={() => router.push('/dashboard/settings')}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            Complete Setup →
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -438,7 +451,7 @@ export default function NewPayrollWizard() {
           </Button>
           <Button
             onClick={handleCreate}
-            disabled={creating || checking || !!overlapError || !orgId}
+            disabled={creating || checking || !!overlapError || !organisation?.id}
             className="flex-1 bg-blue-600 hover:bg-blue-700"
           >
             {creating ? (

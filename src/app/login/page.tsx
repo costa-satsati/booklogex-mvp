@@ -6,10 +6,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mail, Loader2, CheckCircle2, AlertCircle, ArrowRight, Chrome } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, ArrowRight, Chrome } from 'lucide-react';
 import Image from 'next/image';
 
-type AuthMode = 'signin' | 'signup' | 'magic-link-sent';
+type AuthMode = 'signin' | 'signup' | 'confirmation-sent';
 
 function LoginForm() {
   const router = useRouter();
@@ -32,36 +32,6 @@ function LoginForm() {
     return emailRegex.test(email);
   };
 
-  const handleMagicLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!validateEmail(email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: getRedirectUrl(),
-        },
-      });
-
-      if (error) throw error;
-
-      setMode('magic-link-sent');
-    } catch (err) {
-      console.error('Magic link error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send magic link');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handlePasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -80,17 +50,31 @@ function LoginForm() {
 
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: getRedirectUrl(),
+            data: {
+              full_name: email.split('@')[0], // Default name from email
+            },
           },
         });
 
         if (error) throw error;
 
-        setMode('magic-link-sent');
+        // Check if email confirmation is required
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          // Email already exists
+          setError('An account with this email already exists. Please sign in instead.');
+          setMode('signin');
+        } else if (data.user && !data.session) {
+          // Email confirmation required
+          setMode('confirmation-sent');
+        } else {
+          // Auto-confirmed (development mode)
+          router.push('/dashboard');
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -133,7 +117,8 @@ function LoginForm() {
     }
   };
 
-  if (mode === 'magic-link-sent') {
+  // Confirmation sent screen
+  if (mode === 'confirmation-sent') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
@@ -143,12 +128,12 @@ function LoginForm() {
 
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Check your email</h1>
           <p className="text-gray-600 mb-6">
-            We sent a login link to <strong>{email}</strong>
+            We sent a confirmation link to <strong>{email}</strong>
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-blue-900">
-              Click the link in the email to sign in. The link will expire in 1 hour.
+              Click the link in the email to confirm your account. The link will expire in 24 hours.
             </p>
           </div>
 
@@ -282,23 +267,17 @@ function LoginForm() {
                   className="mt-1"
                   required
                 />
+                {mode === 'signup' && (
+                  <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+                )}
               </div>
 
               {mode === 'signin' && (
-                <div className="flex items-center justify-between text-sm">
-                  <button
-                    type="button"
-                    onClick={handleMagicLink}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
-                    disabled={loading}
-                  >
-                    <Mail className="inline mr-1" size={14} />
-                    Send magic link instead
-                  </button>
+                <div className="flex items-center justify-end text-sm">
                   <button
                     type="button"
                     onClick={() => router.push('/reset-password')}
-                    className="text-gray-600 hover:text-gray-900"
+                    className="text-blue-600 hover:text-blue-700 font-medium"
                   >
                     Forgot password?
                   </button>
@@ -342,16 +321,18 @@ function LoginForm() {
             </div>
 
             {/* Terms & Privacy */}
-            <p className="mt-6 text-xs text-center text-gray-500">
-              By continuing, you agree to our{' '}
-              <a href="/terms" className="text-blue-600 hover:underline">
-                Terms of Service
-              </a>{' '}
-              and{' '}
-              <a href="/privacy" className="text-blue-600 hover:underline">
-                Privacy Policy
-              </a>
-            </p>
+            {mode === 'signup' && (
+              <p className="mt-6 text-xs text-center text-gray-500">
+                By creating an account, you agree to our{' '}
+                <a href="/terms" className="text-blue-600 hover:underline">
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a href="/privacy" className="text-blue-600 hover:underline">
+                  Privacy Policy
+                </a>
+              </p>
+            )}
           </div>
 
           {/* Footer */}
