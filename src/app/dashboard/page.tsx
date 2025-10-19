@@ -34,6 +34,8 @@ import {
   Receipt,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import OnboardingBanner from '@/components/OnboardingBanner';
+import { useOrgContext } from '@/context/OrgContext';
 
 type Summary = {
   income: number;
@@ -54,6 +56,13 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodOption>('thisMonth');
   const [employeeCount, setEmployeeCount] = useState(0);
   const [upcomingPayDate, setUpcomingPayDate] = useState<string | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState({
+    hasBusinessName: false,
+    hasEmployees: false,
+    hasPayrollRun: false,
+  });
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const { organisation, loading: orgLoading } = useOrgContext();
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -91,6 +100,10 @@ export default function DashboardPage() {
   }, [period]);
 
   const loadSummary = useCallback(async () => {
+    if (!organisation?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { start, end } = getDateRange();
 
@@ -98,7 +111,8 @@ export default function DashboardPage() {
       let txnQuery = supabase.from('transactions').select('type, amount, gst_amount, txn_date');
       let payrollQuery = supabase
         .from('payroll_runs')
-        .select('total_gross, total_tax, total_super, pay_period_end');
+        .select('total_gross, total_tax, total_super, pay_period_end')
+        .eq('org_id', organisation.id);
 
       if (start && end) {
         txnQuery = txnQuery.gte('txn_date', start.toISOString()).lte('txn_date', end.toISOString());
@@ -169,6 +183,56 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [getDateRange]);
+
+  // Check onboarding status
+  useEffect(() => {
+    async function checkOnboarding() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Check business name
+        const { data: settings } = await supabase
+          .from('organisations')
+          .select('name')
+          .eq('owner_id', user.id)
+          .single();
+
+        // Check employees
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('org_id')
+          .eq('id', user.id)
+          .single();
+
+        const { count: employeeCount } = await supabase
+          .from('employees')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', profile?.org_id || '')
+          .eq('active', true);
+
+        // Check payroll runs
+        const { count: payrollCount } = await supabase
+          .from('payroll_runs')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', profile?.org_id || '');
+
+        setOnboardingStatus({
+          hasBusinessName: !!settings?.name,
+          hasEmployees: (employeeCount || 0) > 0,
+          hasPayrollRun: (payrollCount || 0) > 0,
+        });
+      } catch (error) {
+        console.error('Error checking onboarding:', error);
+      } finally {
+        setCheckingOnboarding(false);
+      }
+    }
+
+    checkOnboarding();
+  }, []);
 
   useEffect(() => {
     void loadSummary();
@@ -281,6 +345,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-7xl">
+      {/* Onboarding Banner */}
+      {!checkingOnboarding && (
+        <OnboardingBanner
+          hasBusinessName={onboardingStatus.hasBusinessName}
+          hasEmployees={onboardingStatus.hasEmployees}
+          hasPayrollRun={onboardingStatus.hasPayrollRun}
+        />
+      )}
       {/* Header */}
       <div className="border-b pb-6">
         <h1 className="text-4xl font-bold text-gray-900">Dashboard</h1>

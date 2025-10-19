@@ -5,13 +5,13 @@ import { format } from 'date-fns';
 import { formatCurrency } from './tax-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import type { Employee } from '@/types/employee';
-import type { OrganisationSettings } from '@/types/organisation';
+import type { Organisation } from '@/types/organisation';
 
 interface PayslipData {
   payrollRun: PayrollRun;
   payrollItem: PayrollItem;
   employee: Employee;
-  orgSettings: OrganisationSettings;
+  OrgContext: Organisation;
 }
 
 export class PayslipGenerator {
@@ -26,21 +26,21 @@ export class PayslipGenerator {
   }
 
   generate(data: PayslipData): jsPDF {
-    this.addHeader(data.orgSettings);
+    this.addHeader(data.OrgContext);
     this.addEmployeeInfo(data.employee, data.payrollRun);
     this.addPaymentSummary(data.payrollItem);
     this.addDeductionsBreakdown(data.payrollItem);
     this.addYTDSummary(data.payrollItem);
-    this.addFooter(data.orgSettings);
+    this.addFooter(data.OrgContext);
 
     return this.doc;
   }
 
-  private addHeader(org: OrganisationSettings) {
+  private addHeader(org: Organisation) {
     // Company name with fallback
     this.doc.setFontSize(20);
     this.doc.setFont('helvetica', 'bold');
-    const businessName = org.business_name || 'Business Name';
+    const businessName = org.name || 'Business Name';
     this.doc.text(businessName, this.margin, this.yPos);
 
     // ABN with fallback
@@ -266,7 +266,7 @@ export class PayslipGenerator {
     this.yPos = (autoTableDoc.lastAutoTable?.finalY || this.yPos) + 10;
   }
 
-  private addFooter(org: OrganisationSettings) {
+  private addFooter(org: Organisation) {
     const pageHeight = this.doc.internal.pageSize.height;
     const footerY = pageHeight - 30;
 
@@ -326,7 +326,7 @@ export async function generatePayslip(data: PayslipData): Promise<jsPDF> {
 export async function generatePayslipsForRun(
   payrollRun: PayrollRun,
   payrollItems: PayrollItem[],
-  orgSettings: OrganisationSettings
+  OrgContext: Organisation
 ): Promise<Map<string, jsPDF>> {
   const payslips = new Map<string, jsPDF>();
 
@@ -341,7 +341,7 @@ export async function generatePayslipsForRun(
       payrollRun,
       payrollItem: item,
       employee,
-      orgSettings,
+      OrgContext,
     });
 
     const filename = `payslip_${employee.full_name.replace(/\s+/g, '_')}_${format(new Date(payrollRun.pay_date || new Date()), 'yyyy-MM-dd')}.pdf`;
@@ -355,9 +355,9 @@ export async function generatePayslipsForRun(
 export async function downloadAllPayslips(
   payrollRun: PayrollRun,
   payrollItems: PayrollItem[],
-  orgSettings: OrganisationSettings
+  OrgContext: Organisation
 ): Promise<void> {
-  const payslips = await generatePayslipsForRun(payrollRun, payrollItems, orgSettings);
+  const payslips = await generatePayslipsForRun(payrollRun, payrollItems, OrgContext);
 
   payslips.forEach((pdf, filename) => {
     pdf.save(filename);
@@ -369,14 +369,14 @@ export async function downloadEmployeePayslip(
   payrollRun: PayrollRun,
   payrollItem: PayrollItem,
   employee: Employee,
-  orgSettings: OrganisationSettings
+  OrgContext: Organisation
 ): Promise<void> {
   const generator = new PayslipGenerator();
   const pdf = generator.generate({
     payrollRun,
     payrollItem,
     employee,
-    orgSettings,
+    OrgContext,
   });
 
   const filename = `payslip_${employee.full_name.replace(/\s+/g, '_')}_${format(new Date(payrollRun.pay_date || new Date()), 'yyyy-MM-dd')}.pdf`;

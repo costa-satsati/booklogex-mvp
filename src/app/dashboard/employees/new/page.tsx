@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, ChevronRight, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { notify } from '@/lib/notify';
+import { useOrgContext } from '@/context/OrgContext';
 
 type EmployeeFormData = {
   // Personal
@@ -52,6 +53,7 @@ export default function AddEmployeePage() {
     help_debt: false,
     super_rate: 11.5,
   });
+  const { organisation } = useOrgContext();
 
   const updateField = <K extends keyof EmployeeFormData>(field: K, value: EmployeeFormData[K]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -62,6 +64,10 @@ export default function AddEmployeePage() {
   const canContinueStep3 = formData.pay_frequency && (formData.base_salary || formData.hourly_rate);
 
   const handleSubmit = async () => {
+    if (!organisation?.id) {
+      notify.error('Error', 'Organisation not found');
+      return;
+    }
     setSaving(true);
     try {
       // Get org_id
@@ -70,20 +76,12 @@ export default function AddEmployeePage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const { data: org } = await supabase
-        .from('organisations')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
-
-      if (!org) throw new Error('Organization not found');
-
       // Insert employee
       const { data, error } = await supabase
         .from('employees')
         .insert([
           {
-            org_id: org.id,
+            org_id: organisation.id,
             full_name: formData.full_name,
             email: formData.email || null,
             position: formData.position || null,

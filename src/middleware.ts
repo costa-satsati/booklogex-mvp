@@ -30,12 +30,6 @@ export async function middleware(req: NextRequest) {
       .select('org_id')
       .eq('id', user.id)
       .maybeSingle();
-
-    if (!profile?.org_id && !req.nextUrl.pathname.startsWith('/onboarding')) {
-      const redirectUrl = req.nextUrl.clone();
-      redirectUrl.pathname = '/onboarding/organisation';
-      return NextResponse.redirect(redirectUrl);
-    }
   }
 
   return res;

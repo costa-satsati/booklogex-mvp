@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/tax-calculator';
 import { notify } from '@/lib/notify';
 import { supabase } from '@/lib/supabaseClient';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
-import type { OrganisationSettings } from '@/types/organisation';
+import type { Organisation } from '@/types/organisation';
 import { Employee } from '@/types/employee';
 
 interface Props {
@@ -19,7 +19,7 @@ interface Props {
 
 export default function PayslipModal({ payrollRun, onClose }: Props) {
   const [payrollItems, setPayrollItems] = useState<PayrollItem[]>([]);
-  const [orgSettings, setOrgSettings] = useState<OrganisationSettings | null>(null);
+  const [OrgContext, setOrgContext] = useState<Organisation | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [downloadingIndividual, setDownloadingIndividual] = useState<string | null>(null);
@@ -50,15 +50,15 @@ export default function PayslipModal({ payrollRun, onClose }: Props) {
 
       // Load org settings
       const { data: settings, error: settingsError } = await supabase
-        .from('organisation_settings')
+        .from('organisations')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('owner_id', session.user.id)
         .single();
 
       if (settingsError && settingsError.code !== 'PGRST116') {
         throw settingsError;
       }
-      setOrgSettings(settings);
+      setOrgContext(settings);
     } catch (error) {
       console.error('Error loading data:', error);
       notify.error('Error', 'Failed to load payslip data');
@@ -72,14 +72,14 @@ export default function PayslipModal({ payrollRun, onClose }: Props) {
   }, [loadData]);
 
   const handleDownloadAll = async () => {
-    if (!orgSettings) {
+    if (!OrgContext) {
       notify.error('Error', 'Organisation settings not found');
       return;
     }
 
     setDownloadingAll(true);
     try {
-      await downloadAllPayslips(payrollRun, payrollItems, orgSettings);
+      await downloadAllPayslips(payrollRun, payrollItems, OrgContext);
       notify.success(
         'Payslips Downloaded',
         `${payrollItems.length} payslip(s) downloaded successfully`
@@ -96,7 +96,7 @@ export default function PayslipModal({ payrollRun, onClose }: Props) {
   };
 
   const handleDownloadIndividual = async (item: PayrollItem) => {
-    if (!item.employees || !orgSettings) {
+    if (!item.employees || !OrgContext) {
       notify.error('Error', 'Missing employee or organisation data');
       return;
     }
@@ -105,7 +105,7 @@ export default function PayslipModal({ payrollRun, onClose }: Props) {
     try {
       // Cast to Employee type since we fetched all fields
       const employee = item.employees as Employee;
-      await downloadEmployeePayslip(payrollRun, item, employee, orgSettings);
+      await downloadEmployeePayslip(payrollRun, item, employee, OrgContext);
       notify.success('Payslip Downloaded', `${employee.full_name}'s payslip downloaded`);
     } catch (error) {
       console.error('Error downloading payslip:', error);

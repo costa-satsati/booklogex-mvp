@@ -8,7 +8,7 @@ import { notify } from '@/lib/notify';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PayrollRun, PayrollItem, Employee } from '@/types/payroll';
-import { useOrgContext } from '@/context/OrgSettingsContext';
+import { useOrgContext } from '@/context/OrgContext';
 
 import PayrollSteps from './_components/PayrollSteps';
 import SetupStep from './_components/SetupStep';
@@ -19,7 +19,7 @@ import CompleteStep from './_components/CompleteStep';
 type PayrollStep = 'setup' | 'employees' | 'review' | 'complete';
 
 export default function ModernPayrollFlow({ params }: { params: Promise<{ id: string }> }) {
-  const { settings: orgSettings, loading: orgLoading } = useOrgContext();
+  const { organisation: OrgContext, loading: orgLoading } = useOrgContext();
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -217,7 +217,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
           <CompleteStep
             payrollRun={payrollRun}
             payrollItems={payrollItems}
-            orgSettings={orgSettings}
+            OrgContext={OrgContext}
             onBackToDashboard={() => router.push('/dashboard/payroll')}
           />
         )}
