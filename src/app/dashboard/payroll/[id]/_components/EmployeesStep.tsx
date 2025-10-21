@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, ChevronRight, Edit2, Loader2, Plus } from 'lucide-react';
 import { calculatePayroll } from '@/lib/tax-calculator';
-import type { Employee, PayrollRun, PayrollItem } from '@/types/payroll';
+import type { PayrollRun, PayrollItem } from '@/types/payroll';
+import { Employee } from '@/types/employee';
 
 interface Props {
   payrollRun: PayrollRun;
@@ -53,13 +54,13 @@ export default function EmployeesStep({
       // FIX: Better contractor handling
       if (emp.employment_type === 'contractor') {
         // Contractors: calculate from hourly rate if available
-        if (emp.hourly_rate && emp.hours_worked) {
+        if (emp.hourly_rate && emp.hours_per_week) {
           const hoursForPeriod =
             payrollRun.frequency === 'FORTNIGHTLY'
-              ? emp.hours_worked * 2
+              ? emp.hours_per_week * 2
               : payrollRun.frequency === 'WEEKLY'
-                ? emp.hours_worked
-                : emp.hours_worked * 4.33;
+                ? emp.hours_per_week
+                : emp.hours_per_week * 4.33;
           grossPay = emp.hourly_rate * hoursForPeriod;
         } else if (emp.base_salary) {
           // Or use base_salary as the contracted amount for the period
@@ -73,13 +74,13 @@ export default function EmployeesStep({
         }
       } else {
         // Regular employees
-        if (emp.hourly_rate && emp.hours_worked) {
+        if (emp.hourly_rate && emp.hours_per_week) {
           const hoursForPeriod =
             payrollRun.frequency === 'FORTNIGHTLY'
-              ? emp.hours_worked * 2
+              ? emp.hours_per_week * 2
               : payrollRun.frequency === 'WEEKLY'
-                ? emp.hours_worked
-                : emp.hours_worked * 4.33;
+                ? emp.hours_per_week
+                : emp.hours_per_week * 4.33;
           grossPay = emp.hourly_rate * hoursForPeriod;
         } else if (emp.base_salary) {
           const annualSalary = emp.base_salary;
@@ -123,7 +124,7 @@ export default function EmployeesStep({
       return {
         ...emp,
         calculated: calculation,
-        hoursWorked: emp.hours_worked || 0,
+        hoursWorked: emp.hours_per_week || 0,
       };
     });
 
