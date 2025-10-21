@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/tax-calculator';
 import { downloadAllPayslips, downloadEmployeePayslip } from '@/lib/payslip-generator';
 import { notify } from '@/lib/notify';
+import { calculateYTD } from '@/lib/ytd-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import type { Organisation } from '@/types/organisation';
 import type { Employee } from '@/types/employee';
@@ -76,7 +77,9 @@ export default function CompleteStep({
     try {
       // Cast to Employee type - should have all fields from the query
       const employee = item.employees as Employee;
-      await downloadEmployeePayslip(payrollRun, item, employee, OrgContext);
+      // Calculate YTD first
+      const ytdTotals = await calculateYTD(employee.id, OrgContext.id);
+      await downloadEmployeePayslip(payrollRun, item, employee, OrgContext, ytdTotals);
       notify.success('Payslip Downloaded', `${employee.full_name}'s payslip downloaded`);
     } catch (error) {
       console.error('Error downloading payslip:', error);

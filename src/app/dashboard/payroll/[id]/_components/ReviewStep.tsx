@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle2, Download, Loader2, AlertCircle } from 'lucide-
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/tax-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
+import { calculateAnnualLeaveAccrual, calculateSickLeaveAccrual } from '@/lib/leave-calculator';
 
 interface Props {
   payrollRun: PayrollRun;
@@ -87,7 +88,6 @@ export default function ReviewStep({
           <div className="text-xs text-gray-500 mt-1">Business account</div>
         </div>
       </div>
-
       {/* Payment Breakdown */}
       <div className="bg-white border rounded-lg p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Breakdown</h3>
@@ -114,7 +114,6 @@ export default function ReviewStep({
           </div>
         </div>
       </div>
-
       {/* Employee Details Table */}
       <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
@@ -157,6 +156,53 @@ export default function ReviewStep({
         </div>
       </div>
 
+      {/* Leave Accruals Summary */}
+      {payrollItems.some(
+        (item) =>
+          item.employees?.employment_type === 'full_time' ||
+          item.employees?.employment_type === 'part_time'
+      ) && (
+        <div className="bg-white border rounded-lg p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Leave Accruals</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Leave will be automatically accrued for eligible employees when this pay run is
+            finalized.
+          </p>
+          <div className="space-y-2">
+            {payrollItems
+              .filter(
+                (item) =>
+                  item.employees?.employment_type === 'full_time' ||
+                  item.employees?.employment_type === 'part_time'
+              )
+              .map((item) => {
+                const employee = item.employees;
+                if (!employee) return null;
+
+                const annualAccrual = calculateAnnualLeaveAccrual(
+                  employee,
+                  payrollRun.frequency.toLowerCase() as 'weekly' | 'fortnightly' | 'monthly'
+                );
+                const sickAccrual = calculateSickLeaveAccrual(
+                  employee,
+                  payrollRun.frequency.toLowerCase() as 'weekly' | 'fortnightly' | 'monthly'
+                );
+
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded"
+                  >
+                    <div className="font-medium text-gray-900">{employee.full_name}</div>
+                    <div className="text-sm text-gray-600">
+                      +{annualAccrual.toFixed(1)}h annual, +{sickAccrual.toFixed(1)}h sick
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
       {/* Tax & Compliance */}
       <div className="bg-white border rounded-lg p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax & Compliance</h3>
@@ -191,7 +237,6 @@ export default function ReviewStep({
           </div>
         </div>
       </div>
-
       {/* Warning */}
       {!isReadOnly && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex gap-3">
@@ -209,7 +254,6 @@ export default function ReviewStep({
           </div>
         </div>
       )}
-
       {/* Pre-Finalization Checklist */}
       {!isReadOnly && !validated && (
         <div className="bg-white border rounded-lg p-6 shadow-sm">
@@ -247,7 +291,6 @@ export default function ReviewStep({
           </Button>
         </div>
       )}
-
       {/* Validation Success */}
       {validated && !isReadOnly && (
         <div className="bg-green-50 border-2 border-green-300 rounded-lg p-6 text-center">
@@ -258,7 +301,6 @@ export default function ReviewStep({
           </p>
         </div>
       )}
-
       {/* Actions */}
       <div className="flex justify-between gap-3">
         <Button variant="outline" onClick={onBack} disabled={finalizing || isReadOnly}>

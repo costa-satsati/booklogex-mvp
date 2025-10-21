@@ -1,63 +1,42 @@
+// src/components/ConfirmDeleteModal.tsx (FIXED)
 'use client';
 
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertTriangle, X } from 'lucide-react';
 
-interface ConfirmDeleteModalProps {
+type ConfirmDeleteModalProps = {
   title: string;
   message: string;
-  onConfirm: () => void;
+  employeeName: string;
   onCancel: () => void;
+  onConfirm: () => void;
   loading?: boolean;
-  employeeName?: string;
-}
+};
 
 export default function ConfirmDeleteModal({
   title,
   message,
-  onConfirm,
-  onCancel,
-  loading = false,
   employeeName,
+  onCancel,
+  onConfirm,
+  loading = false,
 }: ConfirmDeleteModalProps) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full">
-        {/* Header with danger color */}
-        <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-              <AlertTriangle className="text-red-600" size={20} />
-            </div>
-            <h3 className="text-lg font-semibold text-red-900">{title}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop - Changed from bg-black to bg-gray-900 with opacity */}
+      <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" onClick={onCancel} />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 animate-in fade-in zoom-in duration-200">
+        <div className="text-center">
+          <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+            <AlertCircle className="h-6 w-6 text-red-600" />
           </div>
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="text-red-400 hover:text-red-600 transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-4">
-          <p className="text-gray-700">{message}</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+          <p className="text-sm text-gray-600 mb-6">{message}</p>
 
-          {employeeName && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <p className="text-sm text-amber-900">
-                <strong>Warning:</strong> Deleting <strong>{employeeName}</strong> will:
-              </p>
-              <ul className="text-sm text-amber-800 mt-2 ml-4 space-y-1 list-disc">
-                <li>Remove all their payroll history</li>
-                <li>Delete associated pay runs</li>
-                <li>Cannot be undone</li>
-              </ul>
-            </div>
-          )}
-
-          <div className="flex gap-3 mt-6">
+          <div className="flex gap-3">
             <Button variant="outline" onClick={onCancel} disabled={loading} className="flex-1">
               Cancel
             </Button>
@@ -72,7 +51,7 @@ export default function ConfirmDeleteModal({
                   Deleting...
                 </>
               ) : (
-                'Delete Employee'
+                'Delete'
               )}
             </Button>
           </div>

@@ -5,4 +5,5 @@ export const notify = {
   success: (title: string, desc?: string) => toast.success(title, { description: desc }),
   error: (title: string, desc?: string) => toast.error(title, { description: desc }),
   info: (title: string, desc?: string) => toast.info(title, { description: desc }),
+  warning: (title: string, desc?: string) => toast.warning(title, { description: desc }),
 };
