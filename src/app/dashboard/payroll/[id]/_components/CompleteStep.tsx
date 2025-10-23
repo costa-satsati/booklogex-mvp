@@ -21,6 +21,13 @@ import { calculateYTD } from '@/lib/ytd-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import type { Organisation } from '@/types/organisation';
 import type { Employee } from '@/types/employee';
+import type { StpReport, StpValidationResult } from '@/types/stp';
+import { generateStpReport } from '@/lib/stp/stp-generator';
+import { validateStpReport, isStpReady } from '@/lib/stp/stp-validator';
+import { downloadStpCsv } from '@/lib/stp/stp-csv-exporter';
+import { downloadStpJson } from '@/lib/stp/stp-json-exporter';
+import { saveStpReport } from '@/lib/stp/stp-storage';
+import { supabase } from '@/lib/supabaseClient';
 
 interface Props {
   payrollRun: PayrollRun;
@@ -54,6 +61,10 @@ export default function CompleteStep({
     }>;
   } | null>(null);
   const [showBatchModal, setShowBatchModal] = useState(false);
+  const [generatingStp, setGeneratingStp] = useState(false);
+  const [stpReport, setStpReport] = useState<StpReport | null>(null);
+  const [stpValidation, setStpValidation] = useState<StpValidationResult | null>(null);
+  const [showStpModal, setShowStpModal] = useState(false);
 
   const totals = payrollItems.reduce(
     (acc, item) => ({
@@ -211,6 +222,65 @@ export default function CompleteStep({
       notify.error('Batch Send Failed', 'Failed to send payslips via email');
     } finally {
       setIsSendingBatch(false);
+    }
+  };
+
+  const handleGenerateStpReport = async () => {
+    if (!OrgContext) {
+      notify.error('Settings Required', 'Please complete your organisation settings first');
+      return;
+    }
+
+    // Check if STP ready
+    const readyCheck = isStpReady(OrgContext);
+    if (!readyCheck.ready) {
+      notify.error('Missing Information', `Please complete: ${readyCheck.missing.join(', ')}`);
+      return;
+    }
+
+    setGeneratingStp(true);
+    try {
+      // Calculate YTD for each employee
+      const ytdMap = new Map();
+      for (const item of payrollItems) {
+        const employee = item.employees as unknown as Employee;
+        if (employee) {
+          const ytd = await calculateYTD(employee.id);
+          ytdMap.set(employee.id, ytd);
+        }
+      }
+
+      // Generate report
+      const report = await generateStpReport(payrollRun, payrollItems, OrgContext, ytdMap);
+
+      // Validate report
+      const validation = validateStpReport(report);
+
+      setStpReport(report);
+      setStpValidation(validation);
+      setShowStpModal(true);
+
+      if (!validation.valid) {
+        notify.error(
+          'Validation Failed',
+          `${validation.errors.length} error(s) found. Please review.`
+        );
+      } else if (validation.warnings.length > 0) {
+        notify.warning(
+          'Validation Warnings',
+          `${validation.warnings.length} warning(s) found. Review recommended.`
+        );
+      } else {
+        notify.success('STP Report Generated', 'Ready to download and lodge');
+      }
+    } catch (error) {
+      console.error('Error generating STP report:', error);
+      notify.error(
+        'Generation Failed',
+        error instanceof Error ? error.message : 'Failed to generate STP report'
+      );
+    } finally {
+      setGeneratingStp(false);
     }
   };
 
@@ -501,6 +571,72 @@ export default function CompleteStep({
         </div>
       </div>
 
+      {/* STP - Download */}
+      <div className="bg-white border rounded-lg p-6">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <FileText size={18} />
+          Single Touch Payroll (STP)
+        </h3>
+
+        {payrollRun.stp_lodged ? (
+          <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded">
+            <CheckCircle2 className="text-green-600" size={20} />
+            <div className="flex-1">
+              <div className="font-medium text-green-900">STP Lodged</div>
+              <div className="text-sm text-green-700">
+                Reported to ATO on{' '}
+                {payrollRun.stp_lodged_at
+                  ? format(new Date(payrollRun.stp_lodged_at), 'd MMM yyyy, h:mm a')
+                  : 'Unknown date'}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-gray-600 mb-4">
+              Generate STP report to lodge with the ATO. This is required every time you pay
+              employees.
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleGenerateStpReport}
+                disabled={generatingStp}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                {generatingStp ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4" />
+                    Generate STP Report
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900">
+              <strong>Note:</strong> STP must be lodged on or before pay day. You can lodge through
+              the{' '}
+              <a
+                href="https://bp.ato.gov.au"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                ATO Business Portal
+              </a>
+              .
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Batch Results Modal */}
       {showBatchModal && batchResults && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -577,6 +713,158 @@ export default function CompleteStep({
                 </Button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showStpModal && stpReport && stpValidation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-3xl w-full max-h-[90vh] overflow-auto">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">STP Report Generated</h3>
+
+            {/* Validation Results */}
+            {!stpValidation.valid && stpValidation.errors.length > 0 && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="text-red-600" size={20} />
+                  <div className="font-semibold text-red-900">
+                    {stpValidation.errors.length} Error(s) Found
+                  </div>
+                </div>
+                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                  {stpValidation.errors.map((error, i: number) => (
+                    <li key={i}>{error.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {stpValidation.valid && stpValidation.warnings.length > 0 && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="text-amber-600" size={20} />
+                  <div className="font-semibold text-amber-900">
+                    {stpValidation.warnings.length} Warning(s)
+                  </div>
+                </div>
+                <ul className="list-disc list-inside text-sm text-amber-700 space-y-1">
+                  {stpValidation.warnings.map((warning, i: number) => (
+                    <li key={i}>{warning.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {stpValidation.valid && stpValidation.warnings.length === 0 && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="text-green-600" size={20} />
+                  <div className="font-semibold text-green-900">Report Valid - Ready to Lodge</div>
+                </div>
+              </div>
+            )}
+
+            {/* Report Summary */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-blue-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-blue-900">{stpReport.totalEmployees}</div>
+                <div className="text-sm text-blue-600">Employees</div>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-green-900">
+                  {formatCurrency(stpReport.totalGross)}
+                </div>
+                <div className="text-sm text-green-600">Total Gross</div>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-purple-900">
+                  {formatCurrency(stpReport.totalPaygWithheld)}
+                </div>
+                <div className="text-sm text-purple-600">PAYG Withheld</div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2">
+              <Button
+                onClick={() => {
+                  downloadStpCsv(stpReport);
+                  notify.success('CSV Downloaded', 'STP report downloaded as CSV');
+                }}
+                className="w-full flex items-center justify-center gap-2"
+                disabled={!stpValidation.valid}
+              >
+                <Download size={18} />
+                Download CSV for ATO Portal
+              </Button>
+
+              <Button
+                onClick={() => {
+                  downloadStpJson(stpReport);
+                  notify.success('JSON Downloaded', 'STP report downloaded as JSON');
+                }}
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+              >
+                <Download size={18} />
+                Download JSON (Backup)
+              </Button>
+
+              <Button
+                onClick={async () => {
+                  const {
+                    data: { user },
+                  } = await supabase.auth.getUser();
+                  if (!user) return;
+
+                  const result = await saveStpReport(
+                    stpReport,
+                    payrollRun.id,
+                    OrgContext!.id,
+                    user.id
+                  );
+
+                  if (result.success) {
+                    notify.success('Report Saved', 'STP report saved to database');
+                    setShowStpModal(false);
+                  } else {
+                    notify.error('Save Failed', result.error || 'Failed to save report');
+                  }
+                }}
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+              >
+                <Send size={18} />
+                Save Report (Mark as Ready to Lodge)
+              </Button>
+            </div>
+
+            {/* Instructions */}
+            <div className="mt-6 p-4 bg-gray-50 rounded text-sm text-gray-700">
+              <div className="font-semibold mb-2">📋 How to Lodge:</div>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Download the CSV file above</li>
+                <li>
+                  Go to{' '}
+                  <a
+                    href="https://bp.ato.gov.au"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 underline"
+                  >
+                    ATO Business Portal
+                  </a>
+                </li>
+                <li>Navigate to: Single Touch Payroll → Lodgements</li>
+                <li>Upload the CSV file</li>
+                <li>Review and submit to ATO</li>
+                <li>Come back here and mark as lodged</li>
+              </ol>
+            </div>
+
+            <Button onClick={() => setShowStpModal(false)} variant="ghost" className="w-full mt-4">
+              Close
+            </Button>
           </div>
         </div>
       )}

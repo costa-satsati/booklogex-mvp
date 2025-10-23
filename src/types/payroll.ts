@@ -1,5 +1,6 @@
 // src/types/payroll.ts (COMPLETE VERSION)
 import type { Employee } from '@/types/employee';
+import { UrlWithStringQuery } from 'url';
 
 export interface PayrollRun {
   id: string;
@@ -17,6 +18,8 @@ export interface PayrollRun {
   finalized_at: string | null;
   created_at: string;
   idempotency_key: string | null;
+  stp_lodged: boolean;
+  stp_lodged_at: string;
 }
 
 export interface PayrollItem {

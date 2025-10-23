@@ -28,6 +28,9 @@ export interface Employee {
   super_member_number?: string;
   bank_bsb?: string;
   bank_account?: string;
+  abn: string;
+  country_code: string;
+  tax_scale_type: string;
 
   // Leave balances
   annual_leave_hours?: number;
