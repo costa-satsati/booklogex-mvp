@@ -278,7 +278,9 @@ export default function EmployeesStep({
                   onChange={() => {}}
                   onClick={(e) => {
                     e.stopPropagation();
-                    !isReadOnly && toggleEmployee(emp.id);
+                    if (!isReadOnly) {
+                      toggleEmployee(emp.id);
+                    }
                   }}
                   className="w-5 h-5 rounded text-blue-600"
                   disabled={isReadOnly}
@@ -384,7 +386,7 @@ export default function EmployeesStep({
                       <Input
                         type="number"
                         value={emp.hoursWorked}
-                        onChange={(e) => {
+                        onChange={() => {
                           // TODO: Update hours and recalculate
                         }}
                         className="w-32"

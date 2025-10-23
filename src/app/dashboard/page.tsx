@@ -65,7 +65,7 @@ export default function DashboardPage() {
     hasPayrollRun: false,
   });
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
-  const { organisation, loading: orgLoading } = useOrgContext();
+  const { organisation } = useOrgContext();
   const [leaveAlerts, setLeaveAlerts] = useState<LeaveAlert[]>([]);
 
   useEffect(() => {

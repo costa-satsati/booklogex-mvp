@@ -6,7 +6,6 @@ import { formatCurrency } from './tax-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import type { Employee } from '@/types/employee';
 import type { Organisation } from '@/types/organisation';
-import { supabase } from './supabaseClient';
 import type { YTDTotals } from './ytd-calculator';
 import { hoursToDays } from './leave-calculator';
 
@@ -485,4 +484,31 @@ export async function downloadEmployeePayslip(
 
   const filename = `payslip_${employee.full_name.replace(/\s+/g, '_')}_${format(new Date(payrollRun.pay_date || new Date()), 'yyyy-MM-dd')}.pdf`;
   pdf.save(filename);
+}
+
+// ✅ FIXED: This function now works in Node.js (server-side)
+export function generatePayslipPDFBase64(
+  payrollRun: PayrollRun,
+  payrollItem: PayrollItem,
+  employee: Employee,
+  orgSettings: Organisation,
+  ytdTotals?: YTDTotals
+): string {
+  const generator = new PayslipGenerator();
+
+  const pdf = generator.generate({
+    payrollRun,
+    payrollItem,
+    employee,
+    OrgContext: orgSettings,
+    ytdTotals,
+  });
+
+  // Use jsPDF's built-in base64 output (works in both browser and Node.js)
+  // This method doesn't require FileReader, which is only available in browsers
+  const base64String = pdf.output('dataurlstring');
+  // Remove the "data:application/pdf;base64," prefix to get just the base64 data
+  const base64 = base64String.split(',')[1];
+
+  return base64;
 }

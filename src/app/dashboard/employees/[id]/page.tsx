@@ -1,7 +1,7 @@
 // src/app/dashboard/employees/[id]/page.tsx - COMPLETE VERSION
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { notify } from '@/lib/notify';
@@ -20,13 +20,11 @@ import {
   Clock,
   TrendingUp,
   Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/tax-calculator';
 import type { Employee, LeaveTransaction } from '@/types/employee';
 import {
-  formatLeaveBalance,
   calculateYearsOfService,
   isEligibleForLeave,
 } from '@/lib/leave-calculator';
@@ -52,13 +50,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const [showLeaveAdjustment, setShowLeaveAdjustment] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (organisation?.id) {
-      loadEmployeeData();
-    }
-  }, [id, organisation?.id]);
-
-  const loadEmployeeData = async () => {
+  const loadEmployeeData = useCallback(async () => {
     if (!organisation?.id) return;
 
     setLoading(true);
@@ -90,7 +82,13 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, organisation?.id]);
+
+  useEffect(() => {
+    if (organisation?.id) {
+      loadEmployeeData();
+    }
+  }, [organisation?.id, loadEmployeeData]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -589,7 +587,6 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
         <ConfirmDeleteModal
           title="Delete Employee"
           message={`Are you sure you want to delete ${employee.full_name}? This action cannot be undone.`}
-          employeeName={employee.full_name}
           onCancel={() => setShowDeleteModal(false)}
           onConfirm={handleDelete}
           loading={deleting}

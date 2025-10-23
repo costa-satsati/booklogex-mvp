@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 type ConfirmDeleteModalProps = {
   title: string;
   message: string;
-  employeeName: string;
   onCancel: () => void;
   onConfirm: () => void;
   loading?: boolean;
@@ -16,7 +15,6 @@ type ConfirmDeleteModalProps = {
 export default function ConfirmDeleteModal({
   title,
   message,
-  employeeName,
   onCancel,
   onConfirm,
   loading = false,

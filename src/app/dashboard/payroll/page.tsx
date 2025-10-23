@@ -1,7 +1,7 @@
 // src/app/dashboard/payroll/page.tsx - IMPROVED VERSION
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -15,10 +15,9 @@ import {
   DollarSign,
   Trash2,
   Edit2,
-  MoreVertical,
 } from 'lucide-react';
 import { notify } from '@/lib/notify';
-import { format, differenceInDays, startOfWeek, endOfWeek, addDays } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/tax-calculator';
 import type { PayrollRun } from '@/types/payroll';
@@ -26,7 +25,7 @@ import { useOrgContext } from '@/context/OrgContext';
 
 export default function PayrollPage() {
   const router = useRouter();
-  const { organisation, loading: orgLoading } = useOrgContext();
+  const { organisation } = useOrgContext();
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -38,27 +37,7 @@ export default function PayrollPage() {
     nextPayDate: null as string | null,
   });
 
-  const loadRuns = async () => {
-    if (!organisation?.id) return;
-
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('payroll_runs')
-      .select('*')
-      .eq('org_id', organisation.id) // ← Use from context
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error(error);
-      notify.error('Error', 'Failed to load payroll runs');
-    } else {
-      setRuns(data || []);
-      calculateStats(data || []);
-    }
-    setLoading(false);
-  };
-
-  const calculateStats = async (payrollRuns: PayrollRun[]) => {
+  const calculateStats = useCallback(async (payrollRuns: PayrollRun[]) => {
     if (!organisation?.id) return;
 
     const ytd = payrollRuns
@@ -85,7 +64,27 @@ export default function PayrollPage() {
       pendingSuper: pendingSuper,
       nextPayDate: upcomingRuns[0]?.pay_date || null,
     });
-  };
+  }, [organisation?.id]);
+
+  const loadRuns = useCallback(async () => {
+    if (!organisation?.id) return;
+
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('payroll_runs')
+      .select('*')
+      .eq('org_id', organisation.id) // ← Use from context
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error(error);
+      notify.error('Error', 'Failed to load payroll runs');
+    } else {
+      setRuns(data || []);
+      calculateStats(data || []);
+    }
+    setLoading(false);
+  }, [organisation?.id, calculateStats]);
 
   // NEW: Delete draft pay run
   const handleDeleteDraft = async (runId: string) => {
@@ -131,10 +130,10 @@ export default function PayrollPage() {
     if (organisation?.id) {
       loadRuns();
     }
-  }, [organisation?.id]);
+  }, [organisation?.id, loadRuns]);
 
   // Show loading state while org is loading
-  if (orgLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />

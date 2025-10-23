@@ -1,7 +1,7 @@
 // src/app/dashboard/payroll/new/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,6 @@ import {
   startOfWeek,
   endOfWeek,
   addDays,
-  addWeeks,
   startOfMonth,
   endOfMonth,
   parseISO,
@@ -76,26 +75,8 @@ export default function NewPayrollWizard() {
     setOverlapError(null);
   };
 
-  // Initialize default dates
-  useEffect(() => {
-    if (organisation?.id) {
-      calculateDefaultDates('FORTNIGHTLY');
-    }
-  }, [organisation?.id]);
-
-  // Auto-check overlap when dates change
-  useEffect(() => {
-    if (form.periodStart && form.periodEnd) {
-      const timer = setTimeout(() => {
-        checkOverlap();
-      }, 500); // Debounce
-
-      return () => clearTimeout(timer);
-    }
-  }, [form.periodStart, form.periodEnd]);
-
   // Check for overlapping pay runs
-  const checkOverlap = async () => {
+  const checkOverlap = useCallback(async () => {
     if (!organisation || !form.periodStart || !form.periodEnd) return;
 
     setChecking(true);
@@ -133,7 +114,25 @@ export default function NewPayrollWizard() {
     } finally {
       setChecking(false);
     }
-  };
+  }, [organisation, form.periodStart, form.periodEnd]);
+
+  // Initialize default dates
+  useEffect(() => {
+    if (organisation?.id) {
+      calculateDefaultDates('FORTNIGHTLY');
+    }
+  }, [organisation?.id]);
+
+  // Auto-check overlap when dates change
+  useEffect(() => {
+    if (form.periodStart && form.periodEnd) {
+      const timer = setTimeout(() => {
+        checkOverlap();
+      }, 500); // Debounce
+
+      return () => clearTimeout(timer);
+    }
+  }, [form.periodStart, form.periodEnd, checkOverlap]);
 
   // Validate form
   const validateForm = (): string | null => {

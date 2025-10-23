@@ -1,7 +1,7 @@
 // src/app/dashboard/employees/page.tsx (COMPLETE REPLACEMENT)
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import {
   DollarSign,
   TrendingUp,
   Users,
-  AlertCircle,
   ChevronRight,
 } from 'lucide-react';
 import { notify } from '@/lib/notify';
@@ -37,10 +36,10 @@ export default function EmployeesPage() {
     contractors: 0,
     avgSalary: 0,
   });
-  const { organisation, loading: orgLoading } = useOrgContext();
+  const { organisation } = useOrgContext();
 
   // Load employees
-  const loadEmployees = async () => {
+  const loadEmployees = useCallback(async () => {
     if (!organisation?.id) return;
     setLoading(true);
     try {
@@ -60,7 +59,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [organisation?.id]);
 
   // Calculate stats
   const calculateStats = (emps: Employee[]) => {
@@ -103,7 +102,7 @@ export default function EmployeesPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [loadEmployees]);
 
   // Filter employees
   const filteredEmployees = employees.filter((emp) => {

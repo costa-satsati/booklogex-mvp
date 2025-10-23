@@ -50,7 +50,7 @@ export function Topbar() {
       await supabase.auth.signOut();
       notify.success('Signed out', 'See you next time!');
       router.push('/login');
-    } catch (error) {
+    } catch {
       notify.error('Error', 'Failed to sign out');
     }
   };

@@ -11,7 +11,7 @@ export interface YTDTotals {
  * Calculate Year-To-Date totals for an employee
  * Uses Australian financial year (July 1 - June 30)
  */
-export async function calculateYTD(employeeId: string, orgId: string): Promise<YTDTotals> {
+export async function calculateYTD(employeeId: string): Promise<YTDTotals> {
   try {
     // Calculate financial year start (July 1)
     const now = new Date();

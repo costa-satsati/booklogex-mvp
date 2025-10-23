@@ -1,7 +1,7 @@
 // src/app/dashboard/payroll/[id]/page.tsx
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { notify } from '@/lib/notify';
@@ -21,7 +21,7 @@ import { Employee } from '@/types/employee';
 type PayrollStep = 'setup' | 'employees' | 'review' | 'complete';
 
 export default function ModernPayrollFlow({ params }: { params: Promise<{ id: string }> }) {
-  const { organisation: OrgContext, loading: orgLoading } = useOrgContext();
+  const { organisation: OrgContext } = useOrgContext();
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -33,11 +33,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    loadPayrollData();
-  }, [id]);
-
-  const loadPayrollData = async () => {
+  const loadPayrollData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: runData, error: runError } = await supabase
@@ -88,7 +84,11 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, searchParams]);
+
+  useEffect(() => {
+    loadPayrollData();
+  }, [loadPayrollData]);
 
   const handleStepChange = (step: PayrollStep) => {
     if (payrollRun?.status === 'finalized' || payrollRun?.status === 'completed') {

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ArrowLeft, ChevronRight, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { useOrgContext } from '@/context/OrgContext';
 import {
