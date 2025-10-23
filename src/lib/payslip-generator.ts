@@ -6,12 +6,15 @@ import { formatCurrency } from './tax-calculator';
 import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import type { Employee } from '@/types/employee';
 import type { Organisation } from '@/types/organisation';
+import type { YTDTotals } from './ytd-calculator';
+import { hoursToDays } from './leave-calculator';
 
 interface PayslipData {
   payrollRun: PayrollRun;
   payrollItem: PayrollItem;
   employee: Employee;
   OrgContext: Organisation;
+  ytdTotals?: YTDTotals; // Optional YTD data
 }
 
 export class PayslipGenerator {
@@ -30,7 +33,8 @@ export class PayslipGenerator {
     this.addEmployeeInfo(data.employee, data.payrollRun);
     this.addPaymentSummary(data.payrollItem);
     this.addDeductionsBreakdown(data.payrollItem);
-    this.addYTDSummary(data.payrollItem);
+    this.addLeaveBalances(data.employee);
+    this.addYTDSummary(data.payrollItem, data.ytdTotals);
     this.addFooter(data.OrgContext);
 
     return this.doc;
@@ -230,25 +234,56 @@ export class PayslipGenerator {
     }
   }
 
-  private addYTDSummary(item: PayrollItem) {
-    this.doc.setFontSize(12);
-    this.doc.setFont('helvetica', 'bold');
-    this.doc.text('Year to Date Summary', this.margin, this.yPos);
+  private addLeaveBalances(employee: Employee) {
+    // Only show for employees eligible for leave
+    if (!['full_time', 'part_time'].includes(employee.employment_type)) {
+      return;
+    }
 
     this.yPos += 5;
 
-    // Note: In a real implementation, you'd fetch actual YTD data
-    // For now, we'll show a placeholder
-    const ytdData = [
-      ['Gross Earnings YTD', formatCurrency(item.gross * 10)],
-      ['PAYG Tax YTD', formatCurrency(item.tax * 10)],
-      ['Superannuation YTD', formatCurrency(item.super * 10)],
-    ];
+    this.doc.setFontSize(12);
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.text('Leave Balances', this.margin, this.yPos);
+
+    this.yPos += 5;
+
+    const hoursPerDay = employee.hours_per_week ? employee.hours_per_week / 5 : 7.6;
+
+    const leaveData: [string, string][] = [];
+
+    if (employee.annual_leave_hours !== undefined) {
+      const days = hoursToDays(employee.annual_leave_hours, hoursPerDay);
+      leaveData.push([
+        'Annual Leave',
+        `${employee.annual_leave_hours.toFixed(1)}h (${days.toFixed(1)} days)`,
+      ]);
+    }
+
+    if (employee.sick_leave_hours !== undefined) {
+      const days = hoursToDays(employee.sick_leave_hours, hoursPerDay);
+      leaveData.push([
+        'Sick/Personal Leave',
+        `${employee.sick_leave_hours.toFixed(1)}h (${days.toFixed(1)} days)`,
+      ]);
+    }
+
+    if (employee.long_service_leave_hours && employee.long_service_leave_hours > 0) {
+      const days = hoursToDays(employee.long_service_leave_hours, hoursPerDay);
+      leaveData.push([
+        'Long Service Leave',
+        `${employee.long_service_leave_hours.toFixed(1)}h (${days.toFixed(1)} days)`,
+      ]);
+    }
+
+    if (leaveData.length === 0) {
+      return; // No leave to show
+    }
 
     autoTable(this.doc, {
       startY: this.yPos,
       head: [],
-      body: ytdData,
+      body: leaveData,
       theme: 'plain',
       styles: {
         fontSize: 9,
@@ -264,6 +299,72 @@ export class PayslipGenerator {
     // Get the final Y position after the table
     const autoTableDoc = this.doc as unknown as { lastAutoTable?: { finalY: number } };
     this.yPos = (autoTableDoc.lastAutoTable?.finalY || this.yPos) + 10;
+
+    // Add note about leave accrual
+    this.doc.setFontSize(8);
+    this.doc.setFont('helvetica', 'italic');
+    this.doc.setTextColor(107, 114, 128);
+    this.doc.text(
+      'Leave balances shown are as at the end of this pay period.',
+      this.margin,
+      this.yPos
+    );
+    this.doc.setTextColor(0, 0, 0);
+    this.yPos += 10;
+  }
+
+  private addYTDSummary(item: PayrollItem, ytdTotals?: YTDTotals) {
+    this.doc.setFontSize(12);
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.text('Year to Date Summary', this.margin, this.yPos);
+
+    this.yPos += 5;
+
+    // Use real YTD data if provided, otherwise use current item * 10 as fallback
+    const ytdGross = ytdTotals?.gross ?? item.gross * 10;
+    const ytdTax = ytdTotals?.tax ?? item.tax * 10;
+    const ytdSuper = ytdTotals?.super ?? item.super * 10;
+
+    // FIXED: Renamed to avoid conflict and properly typed
+    const ytdTableData: [string, string][] = [
+      ['Gross Earnings YTD', formatCurrency(ytdGross)],
+      ['PAYG Tax YTD', formatCurrency(ytdTax)],
+      ['Superannuation YTD', formatCurrency(ytdSuper)],
+    ];
+
+    autoTable(this.doc, {
+      startY: this.yPos,
+      head: [],
+      body: ytdTableData, // Now properly typed as [string, string][]
+      theme: 'plain',
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+      },
+      columnStyles: {
+        0: { fontStyle: 'normal', textColor: [107, 114, 128] },
+        1: { halign: 'right', fontStyle: 'bold' },
+      },
+      margin: { left: this.margin, right: this.margin },
+    });
+
+    // Get the final Y position after the table
+    const autoTableDoc = this.doc as unknown as { lastAutoTable?: { finalY: number } };
+    this.yPos = (autoTableDoc.lastAutoTable?.finalY || this.yPos) + 10;
+
+    // Add note if using estimated data
+    if (!ytdTotals) {
+      this.doc.setFontSize(8);
+      this.doc.setFont('helvetica', 'italic');
+      this.doc.setTextColor(107, 114, 128);
+      this.doc.text(
+        '* YTD figures are estimates. Contact payroll for exact values.',
+        this.margin,
+        this.yPos
+      );
+      this.doc.setTextColor(0, 0, 0);
+      this.yPos += 10;
+    }
   }
 
   private addFooter(org: Organisation) {
@@ -326,15 +427,16 @@ export async function generatePayslip(data: PayslipData): Promise<jsPDF> {
 export async function generatePayslipsForRun(
   payrollRun: PayrollRun,
   payrollItems: PayrollItem[],
-  OrgContext: Organisation
+  OrgContext: Organisation,
+  ytdTotalsMap?: Map<string, YTDTotals> // Optional YTD data for all employees
 ): Promise<Map<string, jsPDF>> {
   const payslips = new Map<string, jsPDF>();
 
   for (const item of payrollItems) {
     if (!item.employees) continue;
 
-    // Ensure we have a complete Employee object
     const employee = item.employees as Employee;
+    const ytdTotals = ytdTotalsMap?.get(employee.id);
 
     const generator = new PayslipGenerator();
     const pdf = generator.generate({
@@ -342,6 +444,7 @@ export async function generatePayslipsForRun(
       payrollItem: item,
       employee,
       OrgContext,
+      ytdTotals, // Pass YTD data if available
     });
 
     const filename = `payslip_${employee.full_name.replace(/\s+/g, '_')}_${format(new Date(payrollRun.pay_date || new Date()), 'yyyy-MM-dd')}.pdf`;
@@ -351,7 +454,6 @@ export async function generatePayslipsForRun(
   return payslips;
 }
 
-// Helper function to download all payslips as separate files
 export async function downloadAllPayslips(
   payrollRun: PayrollRun,
   payrollItems: PayrollItem[],
@@ -364,12 +466,12 @@ export async function downloadAllPayslips(
   });
 }
 
-// Helper function to download a single employee's payslip
 export async function downloadEmployeePayslip(
   payrollRun: PayrollRun,
   payrollItem: PayrollItem,
   employee: Employee,
-  OrgContext: Organisation
+  OrgContext: Organisation,
+  ytdTotals?: YTDTotals // Optional YTD data
 ): Promise<void> {
   const generator = new PayslipGenerator();
   const pdf = generator.generate({
@@ -377,8 +479,36 @@ export async function downloadEmployeePayslip(
     payrollItem,
     employee,
     OrgContext,
+    ytdTotals, // Pass YTD data
   });
 
   const filename = `payslip_${employee.full_name.replace(/\s+/g, '_')}_${format(new Date(payrollRun.pay_date || new Date()), 'yyyy-MM-dd')}.pdf`;
   pdf.save(filename);
+}
+
+// ✅ FIXED: This function now works in Node.js (server-side)
+export function generatePayslipPDFBase64(
+  payrollRun: PayrollRun,
+  payrollItem: PayrollItem,
+  employee: Employee,
+  orgSettings: Organisation,
+  ytdTotals?: YTDTotals
+): string {
+  const generator = new PayslipGenerator();
+
+  const pdf = generator.generate({
+    payrollRun,
+    payrollItem,
+    employee,
+    OrgContext: orgSettings,
+    ytdTotals,
+  });
+
+  // Use jsPDF's built-in base64 output (works in both browser and Node.js)
+  // This method doesn't require FileReader, which is only available in browsers
+  const base64String = pdf.output('dataurlstring');
+  // Remove the "data:application/pdf;base64," prefix to get just the base64 data
+  const base64 = base64String.split(',')[1];
+
+  return base64;
 }

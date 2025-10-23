@@ -159,7 +159,7 @@ export default function TransactionsPage() {
     };
   }, [loadTransactions]);
 
-  const handleAdd = async (txn: Partial<Transaction>) => {
+  const handleAdd = async () => {
     await loadTransactions();
     setModalState(null);
   };

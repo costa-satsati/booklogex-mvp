@@ -27,7 +27,6 @@ import {
   Shield,
   Bell,
 } from 'lucide-react';
-import { useOrgContext } from '@/context/OrgContext';
 
 type Organisation = {
   id?: string;
@@ -122,6 +121,7 @@ export default function SettingsPage() {
       return false;
     }
     setValidationErrors((prev) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { abn, ...rest } = prev;
       return rest;
     });
@@ -136,6 +136,7 @@ export default function SettingsPage() {
       return false;
     }
     setValidationErrors((prev) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { contact_email, ...rest } = prev;
       return rest;
     });

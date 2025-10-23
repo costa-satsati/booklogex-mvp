@@ -5,7 +5,7 @@
 **Name:** BookLogex  
 **Description:** AI-Powered Bookkeeping & Payroll SaaS for Australian Small Businesses  
 **Target Market:** Australian sole traders, small businesses (1-50 employees)  
-**Status:** MVP Development Phase
+**Status:** MVP Development Phase - Leave Tracking Implementation Complete ✅
 
 ## 🛠 Tech Stack
 
@@ -31,69 +31,91 @@
 - **CSV:** FileSaver.js
 - **Date handling:** date-fns
 
+---
+
 ## 📁 Project Structure
 
 ```
 src/
 ├── app/
 │   ├── login/
-│   │   └── page.tsx              # Email/password + Google OAuth (magic links removed)
+│   │   └── page.tsx              # Email/password + Google OAuth
 │   ├── reset-password/
 │   │   └── page.tsx              # Password reset flow
 │   ├── update-password/
 │   │   └── page.tsx              # Set new password
 │   ├── auth/
 │   │   └── callback/
-│   │       └── route.ts          # Auth callback (handles OAuth + creates missing profiles)
+│   │       └── route.ts          # Auth callback (handles OAuth + creates profiles)
 │   ├── setup/
-│   │   └── page.tsx              # Fallback profile creation (if trigger fails)
+│   │   └── page.tsx              # Fallback profile creation
 │   ├── dashboard/
-│   │   ├── page.tsx              # Main dashboard with analytics
+│   │   ├── page.tsx              # Main dashboard with analytics & leave alerts
 │   │   ├── components/
 │   │   │   ├── Sidebar.tsx       # Desktop navigation
 │   │   │   └── Topbar.tsx        # Header with mobile menu
 │   │   ├── employees/
-│   │   │   ├── page.tsx          # Employee list
-│   │   │   ├── [id]/page.tsx    # Employee detail view
-│   │   │   └── new/page.tsx     # Add employee (4-step wizard)
+│   │   │   ├── page.tsx          # Employee list (PRODUCTION READY)
+│   │   │   ├── [id]/
+│   │   │   │   ├── page.tsx      # Employee detail with leave tracking (COMPLETE)
+│   │   │   │   └── _components/
+│   │   │   │       ├── LeaveBalanceCard.tsx       # Leave balance display
+│   │   │   │       ├── LeaveHistoryTable.tsx      # Leave transaction history
+│   │   │   │       └── LeaveAdjustmentModal.tsx   # Manual leave adjustments
+│   │   │   └── new/page.tsx     # Add employee wizard (UPDATED)
 │   │   ├── payroll/
 │   │   │   ├── page.tsx          # Payroll runs list with delete
-│   │   │   ├── new/page.tsx      # Setup wizard with validation
-│   │   │   ├── [id]/page.tsx    # Edit payroll run (fixed flow)
+│   │   │   ├── new/page.tsx      # Setup wizard (FIXED HOOKS)
+│   │   │   ├── [id]/page.tsx    # Edit payroll run with leave accrual
 │   │   │   └── _components/      # Payroll sub-components
+│   │   │       ├── SetupStep.tsx
+│   │   │       ├── EmployeesStep.tsx
+│   │   │       ├── ReviewStep.tsx         # Shows leave accruals
+│   │   │       ├── CompleteStep.tsx       # Payslip downloads with YTD
+│   │   │       └── PayrollSteps.tsx
 │   │   ├── transactions/
-│   │   │   └── page.tsx          # Income/expense tracking with view/edit/delete
+│   │   │   └── page.tsx          # Income/expense tracking
 │   │   ├── bas/
 │   │   │   └── page.tsx          # BAS quarterly reports
 │   │   └── settings/
-│   │       └── page.tsx          # Organisation + Profile settings (tabbed)
+│   │       └── page.tsx          # Organisation + Profile settings
 │   └── layout.tsx
 ├── components/
 │   ├── ui/                        # shadcn/ui components
-│   ├── TransactionModals.tsx     # All transaction modals (add/view/edit/delete)
-│   ├── ConfirmDeleteModal.tsx
+│   ├── TransactionModals.tsx     # Transaction CRUD modals
+│   ├── ConfirmDeleteModal.tsx    # Delete confirmation (FIXED BACKGROUND)
+│   ├── EditEmployeeModal.tsx     # Edit employee (FIXED BACKGROUND)
+│   ├── OnboardingBanner.tsx      # Progressive onboarding
 │   └── PayrollRunDetailsDrawer.tsx
 ├── lib/
 │   ├── supabaseClient.ts         # Client-side Supabase
 │   ├── supabaseServer.ts         # Server-side Supabase
 │   ├── tax-calculator.ts         # Australian tax calculations
 │   ├── payroll.ts                # Payroll utilities
+│   ├── employee-utils.ts         # Employee validations & calculations
+│   ├── payslip-generator.ts      # PDF payslip generation with leave balances
+│   ├── ytd-calculator.ts         # Year-to-date earnings calculations
+│   ├── leave-calculator.ts       # ✅ NEW: Leave entitlements & accruals
+│   ├── leave-accrual.ts          # ✅ NEW: Auto-accrue leave on payroll
+│   ├── leave-alerts.ts           # ✅ NEW: Leave balance warnings
 │   └── notify.ts                 # Toast notification wrapper
 ├── types/
-│   ├── employee.ts               # Employee types
+│   ├── employee.ts               # Employee types (UPDATED with leave fields)
 │   ├── payroll.ts                # Payroll types
-│   ├── organisation.ts           # Organisation types (updated)
+│   ├── organisation.ts           # Organisation types
 │   └── transaction.ts            # Transaction types
 ├── context/
-│   └── OrgContext.tsx            # Global organisation context (renamed from OrgSettingsContext)
-└── middleware.ts                 # Auth middleware (checks profile exists)
+│   └── OrgContext.tsx            # Global organisation context (PRODUCTION READY)
+└── middleware.ts                 # Auth middleware
 ```
 
-## 🗄 Database Schema
+---
+
+## 🗄️ Database Schema
 
 ### Core Tables
 
-#### **organisations** (Single source of truth for business data)
+#### **organisations** (Single source of truth)
 
 ```sql
 - id (uuid, PK)
@@ -120,13 +142,6 @@ src/
 
 - `idx_organisations_owner_id` on `owner_id`
 
-**Notes:**
-
-- One organisation per user (single-owner model)
-- `name` is nullable to allow onboarding flow
-- `abn` is nullable and has NO UNIQUE constraint (allows empty signups)
-- All business settings consolidated here (no separate settings table)
-
 ---
 
 #### **user_profiles** (Links users to organisations)
@@ -140,29 +155,23 @@ src/
 - role (text, default: 'owner') *required
 - is_active (boolean, default: true) *required
 - created_at (timestamp) *required
-- updated_at (timestamp with time zone, default: now())
+- updated_at (timestamp, default: now())
 ```
 
 **Indexes:**
 
 - `idx_user_profiles_org_id` on `org_id`
 
-**Notes:**
-
-- Links `auth.users` to `organisations`
-- Created automatically on signup via trigger
-- Ready for multi-user feature (future)
-
 ---
 
-#### **employees**
+#### **employees** (UPDATED - Production Ready with Leave Tracking)
 
 ```sql
 - id (uuid, PK)
 - org_id (uuid, FK to organisations) *required
 - full_name (text) *required
-- first_name (text, generated)
-- last_name (text, generated)
+- first_name (text, generated from full_name)
+- last_name (text, generated from full_name)
 - email (text)
 - phone (text)
 - address (text)
@@ -172,10 +181,11 @@ src/
 - department (text)
 - start_date (date)
 - end_date (date)
-- base_salary (numeric)
-- hourly_rate (numeric)
-- pay_frequency (weekly|fortnightly|monthly)  # Per-employee override
-- hours_worked (numeric, default: 38)
+- base_salary (numeric)                    # Stores hourly/daily/annual rate
+- rate_type (text: hourly|daily|annual)    # Indicates what base_salary is
+- hours_per_week (numeric, default: 38)    # Expected weekly hours
+- hourly_rate (numeric, deprecated)        # Kept for backward compatibility
+- pay_frequency (weekly|fortnightly|monthly)
 - tfn (text) - Tax File Number
 - tax_rate (numeric, default: 0.15)
 - tax_free_threshold (boolean, default: true)
@@ -185,6 +195,14 @@ src/
 - super_member_number (text)
 - bank_bsb (text)
 - bank_account (text)
+
+# ✅ NEW: Leave Balance Fields
+- annual_leave_hours (numeric, default: 0)
+- sick_leave_hours (numeric, default: 0)
+- personal_leave_hours (numeric, default: 0)
+- long_service_leave_hours (numeric, default: 0)
+- leave_loading_rate (numeric, default: 17.5)
+
 - active (boolean, default: true)
 - notes (text)
 - created_at (timestamp)
@@ -195,10 +213,73 @@ src/
 - `idx_employees_org_id` on `org_id`
 - `idx_employees_active` on `active`
 
-**Notes:**
+**Constraints:**
 
-- `pay_frequency` on employee overrides `default_pay_frequency` on organisation
-- Both are needed for flexibility (casuals weekly, contractors monthly, etc.)
+- `employees_rate_type_check` CHECK (rate_type IN ('hourly', 'daily', 'annual'))
+
+---
+
+#### **leave_transactions** ✅ NEW
+
+```sql
+- id (uuid, PK)
+- employee_id (uuid, FK to employees) *required
+- org_id (uuid, FK to organisations) *required
+- transaction_type (accrual|taken|adjustment|payout|carryover) *required
+- leave_type (annual|sick|personal|long_service) *required
+- hours (numeric) *required                # Positive for accrual, negative for taken
+- balance_after (numeric) *required        # Balance after this transaction
+- payroll_run_id (uuid, FK to payroll_runs)
+- reference (text)
+- notes (text)
+- created_by (uuid, FK to auth.users)
+- created_at (timestamp) *required
+```
+
+**Indexes:**
+
+- `idx_leave_transactions_employee_id` on `employee_id`
+- `idx_leave_transactions_org_id` on `org_id`
+- `idx_leave_transactions_created_at` on `created_at`
+- `idx_leave_transactions_payroll_run_id` on `payroll_run_id`
+- `idx_leave_transactions_type` on `transaction_type, leave_type`
+
+**RLS Policies:**
+
+- Users can view/insert/update/delete own org leave transactions
+
+---
+
+#### **leave_requests** ✅ NEW (Optional - for future workflow)
+
+```sql
+- id (uuid, PK)
+- employee_id (uuid, FK to employees) *required
+- org_id (uuid, FK to organisations) *required
+- leave_type (annual|sick|personal|long_service|unpaid) *required
+- start_date (date) *required
+- end_date (date) *required
+- hours_requested (numeric) *required
+- status (pending|approved|rejected|cancelled) *required
+- reason (text)
+- notes (text)
+- reviewed_by (uuid, FK to auth.users)
+- reviewed_at (timestamp)
+- leave_transaction_id (uuid, FK to leave_transactions)
+- created_at (timestamp) *required
+- updated_at (timestamp) *required
+```
+
+**Indexes:**
+
+- `idx_leave_requests_employee_id` on `employee_id`
+- `idx_leave_requests_org_id` on `org_id`
+- `idx_leave_requests_status` on `status`
+- `idx_leave_requests_dates` on `start_date, end_date`
+
+**RLS Policies:**
+
+- Users can view/insert/update/delete own org leave requests
 
 ---
 
@@ -206,7 +287,7 @@ src/
 
 ```sql
 - id (uuid, PK)
-- org_id (uuid, FK to organisations)
+- org_id (uuid, FK to organisations) *required
 - frequency (WEEKLY|FORTNIGHTLY|MONTHLY)
 - pay_period_start (date)
 - pay_period_end (date)
@@ -225,6 +306,13 @@ src/
 
 - `idx_payroll_runs_org_id` on `org_id`
 - `idx_payroll_runs_status` on `status`
+
+**Constraints:**
+
+- `unique_org_period` UNIQUE (org_id, pay_period_start, pay_period_end)
+- `unique_idempotency_key` UNIQUE (idempotency_key)
+- `check_period_order` CHECK (pay_period_start < pay_period_end)
+- `check_pay_date` CHECK (pay_date >= pay_period_end)
 
 ---
 
@@ -253,17 +341,17 @@ src/
 
 ```sql
 - id (uuid, PK)
-- org_id (uuid, FK to organisations)
+- org_id (uuid, FK to organisations) *required
 - txn_date (date)
 - description (text)
 - amount (numeric) - excludes GST
 - gst_amount (numeric)
 - type (income|expense)
-- category (text) - Income/expense category
-- payment_method (text) - How payment was made
-- reference (text) - Invoice/receipt number
-- notes (text) - Additional information
-- updated_at (timestamp) - Auto-updated timestamp
+- category (text)
+- payment_method (text)
+- reference (text)
+- notes (text)
+- updated_at (timestamp)
 - created_at (timestamp)
 ```
 
@@ -275,36 +363,11 @@ src/
 - `idx_transactions_category` on `category`
 - `idx_transactions_payment_method` on `payment_method`
 
-**Notes:**
-
-- `user_id` column removed (redundant with org_id in single-owner model)
-
----
-
-### Auth Flow Tables
-
-#### **auth.users** (Supabase managed)
-
-- Handles authentication
-- Cannot be modified directly
-- Trigger fires on INSERT to create profile/org
-
-#### **~~public.users~~** (REMOVED)
-
-- Was a redundant mirror of auth.users
-- Dropped to simplify schema
-
-#### **~~organisation_settings~~** (REMOVED)
-
-- Was duplicate of organisations table
-- All fields moved to organisations table
-- Table dropped completely
-
 ---
 
 ## 🔄 Auth & Signup Flow
 
-### **Current Flow (Working ✅):**
+### **Current Flow (Production Ready ✅):**
 
 1. User signs up via:
    - Email/password (with confirmation email)
@@ -327,477 +390,372 @@ src/
    - If missing, creates org + profile manually (fallback)
    - Redirects to `/dashboard`
 
-7. User completes onboarding (fills in business name, ABN, etc.)
-
-### **Removed:**
-
-- ❌ Magic link authentication (simplified to email/password + OAuth only)
-- ❌ `public.users` table (redundant)
-- ❌ `organisation_settings` table (consolidated into organisations)
-- ❌ `create_default_org_settings()` function (no longer needed)
-
-### **Database Trigger:**
-
-```sql
-CREATE TRIGGER on_auth_user_created_profiles
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
-```
-
-**Function:** Creates organisation (with sensible defaults) + user_profile on signup
+7. User completes onboarding via banner prompts
 
 ---
 
-## 🎨 Design System
+## 🎯 Context System (OrgContext)
 
-### Colors
+### **Implementation:**
 
-- **Primary:** Blue (#3b82f6, #2563eb) - Trust, professionalism
-- **Success:** Green (#10b981, #059669) - Positive actions, income
-- **Error:** Red (#ef4444, #dc2626) - Warnings, expenses
-- **Warning:** Amber (#f59e0b, #d97706) - Alerts, due dates
-- **Info:** Purple (#8b5cf6, #7c3aed) - Neutral info
-- **Gray:** Slate scale for text and borders
+```typescript
+// src/context/OrgContext.tsx
+export function OrgProvider({ children }) {
+  const [organisation, setOrganisation] = useState<Organisation | null>(null);
+  const [loading, setLoading] = useState(true);
 
-### Component Patterns
+  // Loads organisation once at app level
+  // Listens for updates via event listener
+  // Provides refetch() method
+}
 
-```tsx
-// Card with gradient
+// Usage in components:
+import { useOrgContext } from '@/context/OrgContext';
 
+const { organisation, loading, refetch } = useOrgContext();
 
-// Section header
-
-  Title
-  Description
-
-
-// Summary card
-
-
-
-    Section Title
-
-  {/* Content */}
-
-
-// Status badge
-
-  Active
-
+// Access data:
+const orgId = organisation?.id;
+const businessName = organisation?.name;
 ```
 
-### Typography Scale
+**Benefits:**
 
-- **Page Title:** `text-4xl font-bold`
-- **Section Header:** `text-lg font-semibold`
-- **Card Title:** `text-base font-medium`
-- **Body Text:** `text-sm`
-- **Caption:** `text-xs`
+- ✅ Single API call for organisation data
+- ✅ Shared across all components
+- ✅ Automatic updates propagate
+- ✅ Performance optimization
 
-### Spacing
+**IMPORTANT:** Always use `organisation.id` for queries:
 
-- **Page wrapper:** `max-w-7xl mx-auto space-y-6`
-- **Card padding:** `p-6`
-- **Section gaps:** `space-y-6`
-- **Form fields:** `space-y-4`
+```typescript
+// ✅ CORRECT
+const { data } = await supabase.from('employees').select('*').eq('org_id', organisation.id);
+
+// ❌ WRONG (missing org_id filter)
+const { data } = await supabase.from('employees').select('*');
+```
+
+---
+
+## 🍃 Leave Tracking System ✅ NEW
+
+### **Australian Leave Entitlements:**
+
+- **Annual Leave:** 4 weeks per year (152 hours for full-time)
+- **Sick/Personal Leave:** 10 days per year (76 hours for full-time)
+- **Long Service Leave:** 8.67 weeks after 10 years of service
+- **Leave Loading:** 17.5% on annual leave payouts
+- **Pro-rata:** Part-time employees receive pro-rated leave based on hours worked
+
+### **Key Features:**
+
+1. **Automatic Accrual**
+   - Leave accrues automatically on every payroll run
+   - Calculates based on pay frequency (weekly/fortnightly/monthly)
+   - Pro-rata for part-time employees
+   - No accrual for casual/contractor employees
+
+2. **Leave Balance Tracking**
+   - Real-time balance display on employee detail page
+   - Shows hours and days
+   - Visual progress indicators
+   - Leave balance cards with color coding
+
+3. **Leave History & Audit Trail**
+   - All transactions logged in `leave_transactions` table
+   - Shows accruals, adjustments, leave taken
+   - Complete audit trail for compliance
+   - Filterable and sortable history table
+
+4. **Manual Adjustments**
+   - Modal for adding/subtracting leave hours
+   - Requires reason for audit purposes
+   - Prevents negative balances
+   - Records adjustment in transaction history
+
+5. **Leave Alerts**
+   - Dashboard warnings for low balances (<5 days)
+   - Alerts for negative balances (error state)
+   - Warnings for excessive accrual (>40 days)
+   - Configurable alert thresholds
+
+6. **Payslip Integration**
+   - Leave balances automatically shown on payslips
+   - Displays annual, sick, and personal leave
+   - Shows in both hours and days
+   - Only for eligible employees (not casual/contractor)
+
+### **Leave Calculator Functions:**
+
+```typescript
+// src/lib/leave-calculator.ts
+-calculateAnnualLeaveAccrual() - // Per pay period
+  calculateSickLeaveAccrual() - // Per pay period
+  calculateLongServiceLeave() - // After 10 years
+  calculateYearsOfService() - // From start date
+  hoursToDays() / daysToHours() - // Conversions
+  formatLeaveBalance() - // Display formatting
+  isEligibleForLeave(); // Eligibility checks
+```
+
+### **Leave Accrual Process:**
+
+```typescript
+// src/lib/leave-accrual.ts
+1. Triggered on payroll finalization
+2. Calculates accrual per employee based on:
+   - Employment type (full-time/part-time)
+   - Pay frequency (weekly/fortnightly/monthly)
+   - Hours per week
+3. Updates employee leave balances
+4. Records transactions for audit trail
+5. Returns success/failure status for each employee
+```
+
+---
+
+## 🧮 Leave Calculation Reference
+
+### **Standard Entitlements:**
+
+```typescript
+ANNUAL_LEAVE_FULL_TIME = 152 hours (4 weeks × 38 hours)
+SICK_LEAVE_FULL_TIME = 76 hours (10 days × 7.6 hours)
+LONG_SERVICE_LEAVE = 8.67 weeks (after 10 years)
+LEAVE_LOADING = 17.5%
+```
+
+### **Accrual Per Pay Period:**
+
+```typescript
+// Weekly
+annual_accrual = 152 / 52 = 2.92 hours per week
+sick_accrual = 76 / 52 = 1.46 hours per week
+
+// Fortnightly
+annual_accrual = 152 / 26 = 5.85 hours per fortnight
+sick_accrual = 76 / 26 = 2.92 hours per fortnight
+
+// Monthly
+annual_accrual = 152 / 12 = 12.67 hours per month
+sick_accrual = 76 / 12 = 6.33 hours per month
+```
+
+### **Pro-rata for Part-time:**
+
+```typescript
+part_time_annual = (hours_per_week / 38) × 152
+part_time_sick = (hours_per_week / 38) × 76
+
+// Example: 20 hours per week
+annual = (20 / 38) × 152 = 80 hours per year
+sick = (20 / 38) × 76 = 40 hours per year
+```
 
 ---
 
 ## ✅ Features Implemented
 
-### Authentication (/login)
+### Employee Module (PRODUCTION READY 🚀)
 
-- ✅ Email/password signup with confirmation email
-- ✅ Email/password signin
-- ✅ Google OAuth
-- ✅ Password reset flow
-- ✅ Automatic org + profile creation on signup
-- ✅ Auth callback with fallback profile creation
-- ✅ Middleware to check profile exists
-- ❌ Magic links removed (simplified)
+- ✅ **Complete CRUD Operations**
+- ✅ **Simplified Rate Entry:** Single field for hourly/daily/annual rate
+- ✅ **Automatic Calculations:** System calculates all derived rates
+- ✅ **Hours Per Week Tracking:** Accurate pay calculations
+- ✅ **TFN Validation:** Australian TFN with checksum verification
+- ✅ **Phone Validation:** Australian mobile and landline validation
+- ✅ **Auto-formatting:** TFN and phone auto-format on blur
+- ✅ **4-Step Wizard:** Personal → Employment → Payment → Review
+- ✅ **Pay Breakdown Display:** Shows hourly, daily, weekly, annual rates
+- ✅ **Employee List:** Cards with search and filters
+- ✅ **Employee Detail:** Comprehensive view with tabbed interface
+- ✅ **Leave Tracking:** Balance cards, history table, adjustments
+- ✅ **Edit Employee:** Modal with validation
+- ✅ **Delete Employee:** Confirmation modal
+- ✅ **Real-time Sync:** Auto-updates across pages
+
+### Leave Tracking (PRODUCTION READY 🚀) ✅ NEW
+
+- ✅ **Automatic Leave Accrual:** On every payroll run
+- ✅ **Leave Balance Display:** Cards showing annual, sick, personal leave
+- ✅ **Leave History Table:** Complete transaction audit trail
+- ✅ **Manual Adjustments:** Modal for corrections with reason tracking
+- ✅ **Leave Alerts:** Dashboard warnings for low/negative balances
+- ✅ **Payslip Integration:** Leave balances on generated payslips
+- ✅ **Eligibility Checks:** Different rules for full-time/part-time/casual/contractor
+- ✅ **Pro-rata Calculations:** Accurate accruals for part-time employees
+- ✅ **Hours & Days Conversion:** Display in both units
+- ✅ **Australian Compliance:** Fair Work Act compliant calculations
+
+### Payroll Module (PRODUCTION READY 🚀)
+
+- ✅ **List all pay runs** with stats and delete functionality
+- ✅ **Setup wizard** with smart date calculation
+- ✅ **Overlap detection** prevents duplicate periods
+- ✅ **Contractor handling:** Properly handles hourly contractors (no tax/super)
+- ✅ **Employee selection** with validation
+- ✅ **Review & validation** panel
+- ✅ **Leave accrual integration:** Auto-accrues leave on finalization
+- ✅ **Finalize pay run** with status tracking
+- ✅ **Payslip generation:** Professional PDF with company branding
+- ✅ **YTD calculations:** Real year-to-date earnings from database
+- ✅ **Leave balances on payslips:** Automatic display for eligible employees
+- ✅ **Bulk download:** All payslips or individual downloads
+- ✅ **Status tracking:** draft → finalized → completed
 
 ### Dashboard (/)
 
 - ✅ Summary cards (income, expenses, GST, profit)
 - ✅ Action items (upcoming pay runs, BAS due)
 - ✅ Quick stats (employees, PAYG, super)
+- ✅ **Leave overview widget:** Top 5 employees with leave balances ✅ NEW
+- ✅ **Leave alerts:** Dashboard warnings for low leave ✅ NEW
 - ✅ Financial charts (bar chart, pie chart)
 - ✅ Payroll summary section
 - ✅ Quick action buttons
 - ✅ Period filtering (month, quarter, FY, all time)
+- ✅ **Fixed date range logic:** Proper month-end handling
+- ✅ **Status filtering:** Only shows finalized payroll runs
 - ✅ CSV/PDF export
-
-### Employees (/dashboard/employees)
-
-- ✅ Employee list with cards
-- ✅ Stats overview (total, full-time, contractors, avg salary)
-- ✅ Search by name/email/position
-- ✅ Filter by status (active, inactive, contractors)
-- ✅ Employee detail view
-- ✅ Add employee (4-step wizard: Personal → Employment → Payment → Review)
-- ✅ Edit employee (multi-step modal)
-- ✅ Delete employee (with confirmation)
-- ✅ Real-time sync
-- ✅ Empty states
-
-### Payroll (/dashboard/payroll)
-
-- ✅ List all pay runs with stats
-- ✅ Delete draft pay runs with confirmation
-- ✅ Setup wizard (/payroll/new) with smart date calculation
-- ✅ Overlap detection prevents duplicate periods
-- ✅ Improved flow - Setup → Employees → Review → Complete
-- ✅ Fixed contractor calculation - properly handles hourly contractors
-- ✅ Create pay run with validation
-- ✅ Edit employee pay items
-- ✅ Review & validation panel
-- ✅ Finalize pay run
-- ✅ Pay run detail drawer
-- ✅ Automatic totals calculation
-- ✅ Status tracking (draft, finalized, completed)
-- ✅ Contractor badges and special treatment
+- ✅ OnboardingBanner integration
+- ✅ Handles new users without organisation
 
 ### Transactions (/dashboard/transactions)
 
-- ✅ View transaction modal - detailed view with all fields
-- ✅ Edit transaction modal - update existing transactions
-- ✅ Delete transaction modal - safe deletion with confirmation
-- ✅ Enhanced add modal - category, payment method, reference, notes
+- ✅ View transaction modal
+- ✅ Edit transaction modal
+- ✅ Delete transaction modal
+- ✅ Enhanced add modal (category, payment method, reference, notes)
 - ✅ Transaction list with table view
-- ✅ Summary cards (income, expenses, GST, net)
-- ✅ Search transactions (by description, category, reference)
-- ✅ Filter by period (month, quarter, all time)
-- ✅ Filter by type (income, expense)
-- ✅ CSV export with new fields
+- ✅ Summary cards
+- ✅ Search and filters
+- ✅ CSV export
 - ✅ Real-time sync
-- ✅ Empty states
 
 ### BAS (/dashboard/bas)
 
 - ✅ Quarterly GST summaries
-- ✅ Summary cards (quarters, GST collected, GST paid, net)
+- ✅ Summary cards
 - ✅ Quarter selection
 - ✅ Detailed quarter breakdown
 - ✅ CSV/PDF export with org branding
-- ✅ BAS information panel
 - ✅ Real-time calculation from transactions
 
 ### Settings (/dashboard/settings)
 
 - ✅ **Tabbed interface** - Organisation Settings + My Profile
-- ✅ **Organisation Tab:**
-  - Business information (name, ABN, contact)
-  - Tax & compliance (GST registration, reporting cycle, FY start)
-  - Payroll defaults (super rate, pay frequency, pay day)
-  - Banking information (BSB, account)
-- ✅ **Profile Tab:**
-  - Personal information (full name, phone)
-  - Account security (password change link)
-  - Role display
+- ✅ **Organisation Tab:** Business info, tax, payroll defaults, banking
+- ✅ **Profile Tab:** Personal info, account security
 - ✅ Validation (ABN, email)
 - ✅ Unsaved changes warning
 - ✅ Last updated timestamp
 - ✅ Onboarding alert if business name is NULL
-- ✅ Saves to `organisations` table (not org_settings)
+- ✅ Saves to `organisations` table
 
-### Navigation
+### Onboarding
 
-- ✅ Desktop sidebar (fixed, with logo and tip section)
-- ✅ Mobile menu (slide-out with backdrop)
-- ✅ Topbar (org info, search, notifications, user menu)
-- ✅ Active state highlighting
-- ✅ Sign out functionality
-
----
-
-## 🚧 Recent Updates (October 2025)
-
-### **Authentication & Database Restructuring**
-
-**What Changed:**
-
-- Removed magic link authentication
-- Consolidated `organisation_settings` into `organisations` table
-- Removed redundant `public.users` table
-- Fixed auth trigger to create org + profile on signup
-- Added auth callback with fallback profile creation
-- Added middleware to check profile exists
-
-**New Auth Flow:**
-
-1. Email/password or Google OAuth signup
-2. Confirmation email sent (for password signups)
-3. Trigger creates `organisations` + `user_profiles`
-4. Auth callback verifies profile exists (creates if missing)
-5. Middleware blocks dashboard access if no profile
-6. Fallback `/setup` page for manual profile creation
-
-**Database Changes:**
-
-```sql
--- Removed tables
-DROP TABLE organisation_settings;
-DROP TABLE public.users;
-
--- Updated organisations
-ALTER TABLE organisations
-ALTER COLUMN name DROP NOT NULL,
-ALTER COLUMN abn DROP NOT NULL,
-ADD COLUMN bank_bsb text,
-ADD COLUMN bank_account text,
-ADD COLUMN bank_account_name text,
-ADD COLUMN updated_at timestamp with time zone DEFAULT now();
-
--- Updated trigger
-CREATE OR REPLACE FUNCTION handle_new_user() ...
--- Creates organisations with NULL name/abn
--- Creates user_profiles with org_id
-```
-
-**Files Created:**
-
-- `src/app/auth/callback/route.ts` - OAuth callback + profile creation
-- `src/app/setup/page.tsx` - Fallback profile creation
-- `src/middleware.ts` - Profile existence check
-
-**Files Updated:**
-
-- `src/app/login/page.tsx` - Removed magic links, improved signup flow
-- `src/app/dashboard/settings/page.tsx` - Tabbed interface, uses organisations table
-- `src/context/OrgContext.tsx` - Renamed from OrgSettingsContext, uses organisations
+- ✅ OnboardingBanner component
+- ✅ Progressive disclosure (3 steps)
+- ✅ Dismissible and non-intrusive
+- ✅ Tracks completion status
+- ✅ Auto-hides when complete
 
 ---
 
-### **Settings Page Redesign**
+## 🛠 Recent Fixes (December 2024)
 
-**What Changed:**
+### **1. Leave Tracking Implementation** ✅ NEW
 
-- Split into 2 tabs: Organisation Settings + My Profile
-- Organisation tab contains all business data
-- Profile tab contains user-specific settings
-- Clear separation of concerns
-- Ready for future features (notifications, 2FA, team management)
+- Complete Australian leave entitlement system
+- Automatic accrual on payroll finalization
+- Leave balance tracking and display
+- Manual adjustment capability
+- Leave history and audit trail
+- Dashboard leave alerts
+- Payslip integration
 
-**Structure:**
+### **2. YTD Calculations** ✅
 
-```
-Settings Page
-├── Organisation Settings Tab
-│   ├── Business Information
-│   ├── Tax & Compliance
-│   ├── Payroll Defaults
-│   └── Banking Information
-│
-└── My Profile Tab
-    ├── Personal Information
-    ├── Account Security
-    └── Notifications (coming soon)
-```
+- Real year-to-date calculations from database
+- Australian financial year support (July 1 - June 30)
+- Proper date filtering and aggregation
+- Employee-specific YTD tracking
+- Display on payslips
 
-**Benefits:**
+### **3. Payslip Generation** ✅
 
-- Clear data ownership (business vs personal)
-- Scalable for multi-user (future)
-- Matches industry standards (Xero, MYOB)
-- Mobile-friendly tabbed interface
+- Professional PDF generation with jsPDF
+- Company branding (name, ABN, contact)
+- Payment breakdown with tables
+- YTD summaries (accurate calculations)
+- Leave balances (for eligible employees)
+- Contractor-specific handling (no tax/super)
+- Banking details footer
+- Confidentiality notice
 
----
+### **4. Dashboard Date Range Fix** ✅
 
-### **Payroll Module Improvements**
+- Fixed "This Month" filtering logic
+- Proper month-end date handling
+- Date-only comparison (removes time component)
+- Timezone-safe ISO string conversion
+- Status filtering (only finalized payroll runs)
 
-**What Changed:**
+### **5. TypeScript Fixes** ✅
 
-- Added delete functionality for draft pay runs
-- Created setup wizard for better UX
-- Fixed contractor calculation bug
-- Added overlap detection for pay periods
-- Improved step flow navigation
+- Removed all `any` types
+- Proper type assertions for events
+- Type-safe leave type handling
+- Employee property access with switch statements
+- Null checks for payroll run
 
-**Bug Fixes:**
+### **6. Employee Module Polish** ✅
 
-1. ✅ Skipping employee selection step
-2. ✅ Contractor showing $0 for all values
-3. ✅ No way to delete draft pay runs
-4. ✅ Duplicate pay period prevention
+- Simplified rate entry (single base_salary field)
+- Added rate_type (hourly/daily/annual)
+- Added hours_per_week for calculations
+- TFN validation with checksum
+- Phone validation (AU format)
+- Auto-formatting for better UX
+- Fixed modal backgrounds (gray instead of black)
 
-**Example - Contractor Calculation:**
+### **7. React Hooks Error** ✅
 
-```typescript
-// George (Contractor)
-// Hourly: $26/hr, Hours: 38/week, Frequency: Fortnightly
+- Fixed: "Hooks called in different order"
+- Moved all hooks to top of component
+- Conditional rendering after hooks
+- Added proper loading states
 
-BEFORE (Bug):
-Gross: $0.00  Tax: $0.00  Super: $0.00  Net: $0.00  ❌
+### **8. RLS Policies** ✅
 
-AFTER (Fixed):
-Gross: $1,976.00  // 26 × (38 × 2) = 26 × 76
-Tax: $0.00        // Contractors manage own
-Super: $0.00      // Contractors manage own
-Net: $1,976.00    // Same as gross
-✅ Purple "Contractor" badge shown
-```
+- Added INSERT policy for employees
+- Complete CRUD policies on all tables
+- Leave transactions RLS policies
+- Leave requests RLS policies
 
----
+### **9. Payroll Constraints** ✅
 
-### **Transactions Module Enhancements**
+- Fixed: "duplicate key violates unique constraint"
+- Changed to org-scoped uniqueness
+- `unique_org_period` on (org_id, pay_period_start, pay_period_end)
+- `unique_idempotency_key` for extra safety
 
-**What Changed:**
+### **10. Dashboard Loading** ✅
 
-- Consolidated all transaction modals into single file
-- Added full CRUD operations for transactions
-- Enhanced data capture with new fields
-- Improved user experience with better modals
+- Fixed: Infinite loading for new users
+- Added proper org checks
+- Set empty summary when no org
+- Added setup prompt UI
+- Fixed employees array initialization
+- Proper leave alerts handling
 
-**New Features:**
+### **11. Context Implementation** ✅
 
-1. View Transaction Modal - detailed view with color-coded badges
-2. Edit Transaction Modal - pre-filled form with validation
-3. Delete Transaction Modal - confirmation with summary
-4. Enhanced Add Modal - categories, payment methods, reference, notes
-
-**Database Changes:**
-
-```sql
-ALTER TABLE transactions
-ADD COLUMN category VARCHAR(100),
-ADD COLUMN payment_method VARCHAR(50),
-ADD COLUMN reference VARCHAR(100),
-ADD COLUMN notes TEXT,
-ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(),
-DROP COLUMN user_id;  -- Redundant with org_id
-
-CREATE INDEX idx_transactions_category ON transactions(category);
-CREATE INDEX idx_transactions_payment_method ON transactions(payment_method);
-```
-
----
-
-## 🛠 Known Issues
-
-- None currently! 🎉
-
----
-
-## 📝 Code Patterns & Conventions
-
-### Data Fetching
-
-```tsx
-const loadData = useCallback(async () => {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from('table')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    setData(data || []);
-  } catch (error) {
-    console.error('Error:', error);
-    notify.error('Error', 'Failed to load data');
-  } finally {
-    setLoading(false);
-  }
-}, []);
-
-useEffect(() => {
-  loadData();
-}, [loadData]);
-```
-
-### Real-time Subscriptions
-
-```tsx
-useEffect(() => {
-  const channel = supabase
-    .channel('table-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'table_name' }, (payload) => {
-      loadData();
-    })
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [loadData]);
-```
-
-### Modal Pattern
-
-```tsx
-const [showModal, setShowModal] = useState(false);
-
-// In JSX
-{
-  showModal && (
-    <ModalComponent
-      onClose={() => setShowModal(false)}
-      onSuccess={() => {
-        loadData();
-        setShowModal(false);
-      }}
-    />
-  );
-}
-```
-
-### Notifications
-
-```tsx
-import { notify } from '@/lib/notify';
-
-// Success
-notify.success('Title', 'Description');
-
-// Error - use type guard for error handling
-try {
-  // operation
-} catch (error) {
-  notify.error('Error', error instanceof Error ? error.message : 'Failed');
-}
-
-// Info
-notify.info('Title', 'Info message');
-```
-
-### Type Safety
-
-```tsx
-// Always import types
-import type { Employee, EmploymentType } from '@/types/employee';
-import type { Transaction } from '@/types/transaction';
-
-// Use proper typing for state
-const [employee, setEmployee] = useState(null);
-
-// Type function parameters
-const updateEmployee = (id: string, updates: Partial) => {
-  // ...
-};
-
-// Avoid explicit 'any' - use type guards
-catch (error) {
-  const message = error instanceof Error ? error.message : 'Unknown error';
-}
-```
-
-### Organisation Context Usage
-
-```tsx
-import { useOrgContext } from '@/context/OrgContext';
-
-// In component
-const { organisation, loading, refetch } = useOrgContext();
-
-// Access organisation data
-const businessName = organisation?.name;
-const defaultPayFreq = organisation?.default_pay_frequency;
-
-// Refresh after updates
-await refetch();
-```
+- Migrated from hook to context provider
+- Single org query at app level
+- Performance optimization
+- Shared state across components
 
 ---
 
@@ -816,8 +774,17 @@ await refetch();
 - Increasing to 12% from July 2025
 - Automatic calculation on gross wages
 - Quarterly payment tracking
-- Super fund details storage
 - **Special handling for contractors** (they manage own super)
+
+### Leave Entitlements ✅ NEW
+
+- **Annual Leave:** 4 weeks per year (152 hours full-time)
+- **Sick/Personal Leave:** 10 days per year (76 hours full-time)
+- **Long Service Leave:** 8.67 weeks after 10 years
+- **Pro-rata:** Part-time employees get proportional leave
+- **Leave Loading:** 17.5% on annual leave payouts
+- **Automatic Accrual:** On every payroll run
+- **Audit Trail:** Complete transaction history
 
 ### Contractor vs Employee Treatment
 
@@ -825,7 +792,7 @@ await refetch();
 
 - PAYG tax withheld
 - Employer super contributions (11.5%)
-- Leave entitlements
+- Leave entitlements (annual, sick, personal)
 - Workers compensation
 
 **Contractors:**
@@ -849,74 +816,67 @@ await refetch();
 - 1A (GST on sales), 1B (GST on purchases)
 - Net GST payable/refundable
 
-### Fair Work
-
-- National Minimum Wage tracking ($23.23/hr as of July 2024)
-- Leave entitlements (planned)
-- Award rates (planned)
-
 ---
 
-## 📜 Roadmap / Missing Features
+## 📜 Roadmap / Next Features
 
-### High Priority (Quick Wins)
+### High Priority
 
-1. **Onboarding flow** - Banner/wizard to complete business setup
-2. **Attachments/Receipts** - Upload invoices/receipts for transactions
-3. **Payslip PDF generation** - Auto-generate with jsPDF
-4. **Leave balance tracking** - Annual, sick, personal leave
-5. **Better date range picker** - Calendar-based selection
-6. **Audit log** - Track all changes
-7. **Recurring transactions** - Auto-create monthly expenses
+1. ~~Payslip PDF generation~~ ✅ **COMPLETE**
+2. ~~Leave balance tracking~~ ✅ **COMPLETE**
+3. **Email payslips** - Send to employees automatically (2-3 days)
+4. **STP export/lodgement** - XML/CSV file or API integration (1-2 weeks)
+5. **Super payment file** - ABA or SuperStream (1 week)
+6. **Leave requests workflow** - Employee request, manager approve (1 week)
+7. **Leave payout calculations** - When employee leaves (2-3 days)
 
 ### Medium Priority
 
 8. **Document uploads** - Contracts, IDs, receipts
-9. **Email payslips** - Send to employees automatically
-10. **ABA file export** - Bank batch payment file
-11. **Employee portal** - View own payslips/details
-12. **Timesheets** - For hourly employees
-13. **Bulk operations** - Select multiple transactions
-14. **Transaction templates** - Save common transactions
-15. **2FA Authentication** - Two-factor auth for security
-16. **Notification preferences** - Email alerts, reminders
+9. **Attachments/Receipts** - Upload invoices/receipts
+10. **Better date range picker** - Calendar-based selection
+11. **Audit log** - Track all changes
+12. **Recurring transactions** - Auto-create monthly expenses
+13. **Timesheets** - For hourly employees
+14. **Bulk operations** - Select multiple items
+15. **2FA Authentication** - Two-factor auth
+16. **Notification preferences** - Email alerts
 
 ### Advanced Features
 
-17. **Multi-user support** - Team members with roles (accountants, managers)
-18. **Bank feeds** - Auto-import transactions
+17. **Multi-user support** - Team members with roles
+18. **Bank feeds** - Auto-import
+    transactions
 19. **Receipt OCR** - Scan and extract data
 20. **Xero/MYOB sync** - Export to accounting software
 21. **Super clearing house** - Auto-pay super
 22. **STP Phase 2 lodgement** - Direct to ATO
 23. **Mobile app** - React Native or PWA
-24. **Advanced reporting** - P&L, Balance Sheet, Cash Flow
-25. **Forecasting** - Predict cash flow
-26. **Team management** - Invite users, manage permissions
+24. **Leave carry-over** - End of financial year processing
+25. **Leave forecasting** - Predict future liability
 
 ---
 
-## 🛠 Debugging Tips
+## 🔧 Debugging Tips
 
 ### Common Issues
 
-1. **Real-time not working:** Check Supabase channel subscriptions
-2. **Type errors:** Ensure all types are properly imported
-3. **Modal not closing:** Check state management in parent
-4. **Calculations wrong:** Verify GST exclusion logic
-5. **Empty states:** Check loading and data conditions
-6. **Contractor shows $0:** Check hourly_rate calculation before base_salary
-7. **Auth trigger not firing:** Check trigger exists on auth.users
-8. **Profile missing on signup:** Check auth callback route exists
-9. **Organisation context empty:** Ensure OrgProvider wraps app
+1. **Organisation context empty:** Ensure OrgProvider wraps app in layout.tsx
+2. **RLS blocking queries:** Check INSERT policies exist
+3. **Hooks error:** All hooks must be at top, before any returns
+4. **Duplicate payroll runs:** Check unique_org_period constraint
+5. **Dashboard infinite loading:** Check orgLoading and organisation states
+6. **Employee creation fails:** Verify RLS INSERT policy exists
+7. **Leave not accruing:** Check payroll status is 'finalized'
+8. **Dashboard shows zeros:** Check date range and status filter
 
 ### Useful Commands
 
 ```bash
-# Check for TypeScript errors
+# TypeScript check
 npm run build
 
-# Check for linting issues
+# Linting
 npm run lint
 
 # View Supabase logs (if using CLI)
@@ -929,27 +889,101 @@ supabase db reset
 ### Supabase Debugging Queries
 
 ```sql
--- Check if trigger exists
-SELECT trigger_name, event_manipulation, action_statement
-FROM information_schema.triggers
-WHERE event_object_schema = 'auth' AND event_object_table = 'users';
+-- Check RLS policies
+SELECT tablename, policyname, cmd
+FROM pg_policies
+WHERE schemaname = 'public'
+ORDER BY tablename, cmd;
 
 -- Find users without profiles
-SELECT au.id, au.email, au.created_at,
+SELECT au.id, au.email,
   CASE WHEN up.id IS NULL THEN '❌ Missing' ELSE '✅ Has profile' END
 FROM auth.users au
 LEFT JOIN user_profiles up ON up.id = au.id;
 
--- Find organisations without names (onboarding incomplete)
-SELECT o.id, o.owner_id, au.email, o.created_at
+-- Check constraints
+SELECT conname, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'payroll_runs'::regclass;
+
+-- Check leave balances
+SELECT
+  e.full_name,
+  e.employment_type,
+  e.annual_leave_hours,
+  e.sick_leave_hours,
+  COUNT(lt.id) as transaction_count
+FROM employees e
+LEFT JOIN leave_transactions lt ON lt.employee_id = e.id
+GROUP BY e.id, e.full_name, e.employment_type, e.annual_leave_hours, e.sick_leave_hours
+ORDER BY e.full_name;
+
+-- Check leave accruals for a payroll run
+SELECT
+  pr.id,
+  pr.pay_period_start,
+  pr.pay_period_end,
+  pr.status,
+  COUNT(DISTINCT lt.id) as leave_transactions,
+  SUM(CASE WHEN lt.leave_type = 'annual' THEN lt.hours ELSE 0 END) as annual_accrued,
+  SUM(CASE WHEN lt.leave_type = 'sick' THEN lt.hours ELSE 0 END) as sick_accrued
+FROM payroll_runs pr
+LEFT JOIN leave_transactions lt ON lt.payroll_run_id = pr.id
+WHERE pr.org_id = 'your-org-id'
+GROUP BY pr.id, pr.pay_period_start, pr.pay_period_end, pr.status
+ORDER BY pr.created_at DESC;
+
+-- Find organisations without names
+SELECT o.id, o.owner_id, au.email
 FROM organisations o
 JOIN auth.users au ON au.id = o.owner_id
 WHERE o.name IS NULL;
 
--- Check RLS policies
-SELECT tablename, policyname, permissive, roles, cmd, qual
-FROM pg_policies
-WHERE schemaname = 'public';
+-- Check dashboard data for debugging
+SELECT
+  'Transactions' as table_name,
+  COUNT(*) as count,
+  SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+  SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expenses
+FROM transactions
+WHERE org_id = 'your-org-id'
+UNION ALL
+SELECT
+  'Payroll Runs' as table_name,
+  COUNT(*) as count,
+  SUM(total_gross) as income,
+  SUM(total_tax) as expenses
+FROM payroll_runs
+WHERE org_id = 'your-org-id' AND status IN ('finalized', 'completed');
+
+-- Find employees with negative leave balances
+SELECT
+  full_name,
+  employment_type,
+  annual_leave_hours,
+  sick_leave_hours,
+  personal_leave_hours
+FROM employees
+WHERE (annual_leave_hours < 0 OR sick_leave_hours < 0 OR personal_leave_hours < 0)
+  AND active = true
+ORDER BY annual_leave_hours ASC;
+
+-- Verify leave accrual calculations
+SELECT
+  e.full_name,
+  e.employment_type,
+  e.hours_per_week,
+  e.pay_frequency,
+  lt.transaction_type,
+  lt.leave_type,
+  lt.hours,
+  lt.balance_after,
+  lt.created_at
+FROM employees e
+JOIN leave_transactions lt ON lt.employee_id = e.id
+WHERE e.org_id = 'your-org-id'
+ORDER BY e.full_name, lt.created_at DESC
+LIMIT 50;
 ```
 
 ---
@@ -976,191 +1010,176 @@ WHERE schemaname = 'public';
 
 ---
 
-## 📁 Environment Variables
+## 🎓 Code Patterns
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-NEXT_PUBLIC_SITE_URL=http://localhost:3000RetryKContinue
+### Data Fetching with Context
 
-🔐 Row Level Security (RLS)
-Current Status:
-RLS policies need to be implemented for production security.
-Recommended Policies:
-sql-- Enable RLS on all tables
-ALTER TABLE organisations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payroll_runs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payroll_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+```typescript
+import { useOrgContext } from '@/context/OrgContext';
 
--- organisations: Users can only see/update their own org
-CREATE POLICY "Users can view own organisation"
-  ON organisations FOR SELECT
-  USING (owner_id = auth.uid());
+const { organisation, loading: orgLoading } = useOrgContext();
 
-CREATE POLICY "Users can update own organisation"
-  ON organisations FOR UPDATE
-  USING (owner_id = auth.uid());
+const loadData = async () => {
+  if (!organisation?.id) return;
 
--- user_profiles: Users can view/update own profile
-CREATE POLICY "Users can view own profile"
-  ON user_profiles FOR SELECT
-  USING (id = auth.uid());
+  const { data, error } = await supabase
+    .from('employees')
+    .select('*')
+    .eq('org_id', organisation.id) // ← Always filter by org_id
+    .order('created_at', { ascending: false });
 
-CREATE POLICY "Users can update own profile"
-  ON user_profiles FOR UPDATE
-  USING (id = auth.uid());
+  // Handle data...
+};
 
--- employees: Users can access their org's employees
-CREATE POLICY "Users can view own org employees"
-  ON employees FOR SELECT
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+useEffect(() => {
+  if (organisation?.id) {
+    loadData();
+  }
+}, [organisation?.id]);
+```
 
-CREATE POLICY "Users can insert own org employees"
-  ON employees FOR INSERT
-  WITH CHECK (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+### Leave Accrual on Payroll Finalization
 
-CREATE POLICY "Users can update own org employees"
-  ON employees FOR UPDATE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+```typescript
+import { accrueLeaveForPayrollRun } from '@/lib/leave-accrual';
 
-CREATE POLICY "Users can delete own org employees"
-  ON employees FOR DELETE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+const handleFinalize = async () => {
+  if (!payrollRun) {
+    notify.error('Error', 'Payroll run not found');
+    return;
+  }
 
--- payroll_runs: Users can access their org's payroll
-CREATE POLICY "Users can view own org payroll runs"
-  ON payroll_runs FOR SELECT
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+  try {
+    // 1. Accrue leave for all employees
+    const leaveResults = await accrueLeaveForPayrollRun(payrollRun, allEmployees);
 
-CREATE POLICY "Users can insert own org payroll runs"
-  ON payroll_runs FOR INSERT
-  WITH CHECK (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+    const failedAccruals = leaveResults.filter((r) => !r.success);
+    if (failedAccruals.length > 0) {
+      notify.warning('Leave Accrual Warning', `${failedAccruals.length} failed`);
+    }
 
-CREATE POLICY "Users can update own org payroll runs"
-  ON payroll_runs FOR UPDATE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+    // 2. Finalize payroll
+    const { error } = await supabase
+      .from('payroll_runs')
+      .update({ status: 'finalized', finalized_at: new Date().toISOString() })
+      .eq('id', payrollRun.id);
 
-CREATE POLICY "Users can delete own org payroll runs"
-  ON payroll_runs FOR DELETE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+    if (error) throw error;
 
--- payroll_items: Users can access via payroll_runs
-CREATE POLICY "Users can view own org payroll items"
-  ON payroll_items FOR SELECT
-  USING (
-    payroll_run_id IN (
-      SELECT id FROM payroll_runs
-      WHERE org_id IN (
-        SELECT org_id FROM user_profiles WHERE id = auth.uid()
-      )
+    notify.success('Success', 'Pay run finalized with leave accruals');
+  } catch (error) {
+    notify.error('Error', 'Failed to finalize pay run');
+  }
+};
+```
+
+### Real-time Subscriptions
+
+```typescript
+useEffect(() => {
+  loadData();
+
+  const channel = supabase
+    .channel('changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'employees',
+      },
+      () => {
+        loadData();
+      }
     )
-  );
+    .subscribe();
 
-CREATE POLICY "Users can insert own org payroll items"
-  ON payroll_items FOR INSERT
-  WITH CHECK (
-    payroll_run_id IN (
-      SELECT id FROM payroll_runs
-      WHERE org_id IN (
-        SELECT org_id FROM user_profiles WHERE id = auth.uid()
-      )
-    )
-  );
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+```
 
-CREATE POLICY "Users can update own org payroll items"
-  ON payroll_items FOR UPDATE
-  USING (
-    payroll_run_id IN (
-      SELECT id FROM payroll_runs
-      WHERE org_id IN (
-        SELECT org_id FROM user_profiles WHERE id = auth.uid()
-      )
-    )
-  );
+### Modal Pattern with Fixed Background
 
-CREATE POLICY "Users can delete own org payroll items"
-  ON payroll_items FOR DELETE
-  USING (
-    payroll_run_id IN (
-      SELECT id FROM payroll_runs
-      WHERE org_id IN (
-        SELECT org_id FROM user_profiles WHERE id = auth.uid()
-      )
-    )
-  );
+```typescript
+return (
+  <div className="fixed inset-0 z-50 flex items-center justify-center">
+    {/* Backdrop - GRAY not BLACK */}
+    <div
+      className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm"
+      onClick={onClose}
+    />
 
--- transactions: Users can access their org's transactions
-CREATE POLICY "Users can view own org transactions"
-  ON transactions FOR SELECT
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+    {/* Modal */}
+    <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+      {/* Content */}
+    </div>
+  </div>
+);
+```
 
-CREATE POLICY "Users can insert own org transactions"
-  ON transactions FOR INSERT
-  WITH CHECK (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+### Type Safety
 
-CREATE POLICY "Users can update own org transactions"
-  ON transactions FOR UPDATE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+```typescript
+import type { Employee, RateType, LeaveType } from '@/types/employee';
 
-CREATE POLICY "Users can delete own org transactions"
-  ON transactions FOR DELETE
-  USING (org_id IN (
-    SELECT org_id FROM user_profiles WHERE id = auth.uid()
-  ));
+const [employee, setEmployee] = useState<Employee | null>(null);
+const [leaveType, setLeaveType] = useState<LeaveType>('annual');
 
-🔧 Database Indexes
-Performance Optimization:
-sql-- Organisations
-CREATE INDEX IF NOT EXISTS idx_organisations_owner_id ON organisations(owner_id);
+const updateRate = (rate: number, type: RateType) => {
+  // TypeScript ensures type safety
+};
+```
 
--- User Profiles
-CREATE INDEX IF NOT EXISTS idx_user_profiles_org_id ON user_profiles(org_id);
+### Leave Balance Calculations
 
--- Employees
-CREATE INDEX IF NOT EXISTS idx_employees_org_id ON employees(org_id);
-CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(active);
-CREATE INDEX IF NOT EXISTS idx_employees_employment_type ON employees(employment_type);
+```typescript
+import {
+  calculateAnnualLeaveAccrual,
+  calculateSickLeaveAccrual,
+  hoursToDays,
+  formatLeaveBalance,
+} from '@/lib/leave-calculator';
 
--- Payroll Runs
-CREATE INDEX IF NOT EXISTS idx_payroll_runs_org_id ON payroll_runs(org_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_runs_status ON payroll_runs(status);
-CREATE INDEX IF NOT EXISTS idx_payroll_runs_pay_date ON payroll_runs(pay_date);
+// Calculate accrual for this pay period
+const annualAccrual = calculateAnnualLeaveAccrual(employee, 'fortnightly');
+const sickAccrual = calculateSickLeaveAccrual(employee, 'fortnightly');
 
--- Payroll Items
-CREATE INDEX IF NOT EXISTS idx_payroll_items_payroll_run_id ON payroll_items(payroll_run_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_items_employee_id ON payroll_items(employee_id);
+// Convert and format for display
+const days = hoursToDays(employee.annual_leave_hours || 0, 7.6);
+const formatted = formatLeaveBalance(employee.annual_leave_hours || 0);
+// Returns: "152.0h (20.0 days)"
+```
 
--- Transactions
-CREATE INDEX IF NOT EXISTS idx_transactions_org_id ON transactions(org_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_txn_date ON transactions(txn_date);
-CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
-CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
-CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payment_method);
+### Dashboard Date Range Handling
+
+```typescript
+const getDateRange = useCallback(() => {
+  const now = new Date();
+  let start: Date | null = null;
+  let end: Date | null = null;
+
+  switch (period) {
+    case 'thisMonth':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Last day of month
+      break;
+    case 'allTime':
+      start = null;
+      end = null;
+      break;
+  }
+  return { start, end };
+}, [period]);
+
+// Use date-only strings for queries
+if (start && end) {
+  const startDate = start.toISOString().split('T')[0]; // "2025-11-01"
+  const endDate = end.toISOString().split('T')[0]; // "2025-11-30"
+
+  query = query.gte('pay_period_end', startDate).lte('pay_period_end', endDate);
+}
 ```
 
 ---
@@ -1174,7 +1193,8 @@ CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payme
 - [shadcn/ui Components](https://ui.shadcn.com)
 - [ATO Business Portal](https://www.ato.gov.au/business)
 - [Fair Work Ombudsman](https://www.fairwork.gov.au)
-- [Single Touch Payroll](https://www.ato.gov.au/business/single-touch-payroll)
+- [Fair Work - Leave Entitlements](https://www.fairwork.gov.au/leave)
+- [ATO - Single Touch Payroll](https://www.ato.gov.au/business/single-touch-payroll)
 
 ---
 
@@ -1183,406 +1203,179 @@ CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payme
 When starting a new conversation about BookLogex:
 
 1. Upload this context file
-2. Attach any specific files you're working on (max 2-3)
-3. Clearly state your current task or question
+2. Attach specific files you're working on (max 2-3)
+3. Clearly state your task or question
 
 **Example:**
 
 ```
 I'm working on BookLogex (context attached).
 
-Files: [employee.ts, EditEmployeeModal.tsx]
+Files: [leave-calculator.ts, page.tsx]
 
-Task: Add validation for Australian mobile numbers in the employee form.
-
-🔄 Migration Guide
-From organisation_settings to organisations
-If you have existing code using the old structure:
-Find and replace:
-typescript// OLD
-import { useOrgSettings } from '@/context/OrgSettingsContext';
-const { settings: orgSettings } = useOrgSettings();
-const businessName = orgSettings?.business_name;
-
-// NEW
-import { useOrgContext } from '@/context/OrgContext';
-const { organisation } = useOrgContext();
-const businessName = organisation?.name;
-Field mappings:
-Old (organisation_settings)New (organisations)business_namenameabnabncontact_emailcontact_emailcontact_phonecontact_phonebusiness_addressbusiness_addressgst_registeredgst_registeredgst_cyclegst_cyclefinancial_year_start_monthfinancial_year_start_monthdefault_super_ratedefault_super_ratedefault_pay_frequencydefault_pay_frequencydefault_pay_daydefault_pay_daybank_bsbbank_bsbbank_accountbank_accountbank_account_namebank_account_name
-Query changes:
-typescript// OLD
-const { data } = await supabase
-  .from('organisation_settings')
-  .select('*')
-  .eq('user_id', userId)
-  .single();
-
-// NEW
-const { data } = await supabase
-  .from('organisations')
-  .select('*')
-  .eq('owner_id', userId)
-  .single();
+Task: Add leave payout calculation when employee is terminated.
 ```
 
 ---
 
-## 🎯 Architecture Decisions
+## 🎉 Summary of Recent Session
 
-### **Why Single Owner Model?**
+**Date:** December 2024  
+**Focus:** Leave Tracking Implementation  
+**Status:** ✅ **PRODUCTION READY**
 
-**Current:** One user = One organisation
+### **What We Implemented:**
 
-**Rationale:**
+1. ✅ **Database Schema Updates**
+   - Added leave balance columns to employees table
+   - Created leave_transactions table for audit trail
+   - Created leave_requests table (optional, for future)
+   - Added complete RLS policies
 
-- 95% of target market (sole traders, micro businesses) don't need multi-user
-- Simpler onboarding (no complex permission system)
-- Easier to understand for non-technical users
-- Can add multi-user later without major refactor
+2. ✅ **Leave Calculation System**
+   - Australian leave entitlement calculations
+   - Pro-rata for part-time employees
+   - Automatic accrual on payroll runs
+   - Years of service calculations
+   - Hours to days conversions
 
-**Future:** Ready for multi-user
+3. ✅ **Leave Accrual Integration**
+   - Automatic accrual on payroll finalization
+   - Per-employee accrual based on employment type
+   - Transaction logging for audit trail
+   - Error handling and reporting
 
-- `organisations` table already supports multiple `user_profiles`
-- Just need to add invitation system and role-based permissions
+4. ✅ **User Interface Components**
+   - Leave balance cards (annual, sick, personal)
+   - Leave history table with transactions
+   - Leave adjustment modal for corrections
+   - Leave tab on employee detail page
+   - Leave overview widget on dashboard
+   - Leave alerts for low/negative balances
+
+5. ✅ **Payslip Integration**
+   - Leave balances automatically shown
+   - Hours and days format
+   - Only for eligible employees
+   - Professional formatting
+
+6. ✅ **Bug Fixes**
+   - Dashboard date range logic (month-end handling)
+   - Status filtering for payroll runs
+   - TypeScript `any` types removed
+   - Employee array initialization
+   - Null checks for payroll finalization
+   - Modal background colors (gray not black)
+
+### **Key Files Created/Modified:**
+
+**New Files:**
+
+- `src/lib/leave-calculator.ts` - Leave calculations and conversions
+- `src/lib/leave-accrual.ts` - Automatic accrual logic
+- `src/lib/leave-alerts.ts` - Alert generation for dashboard
+- `src/lib/ytd-calculator.ts` - Year-to-date earnings
+- `src/app/dashboard/employees/[id]/_components/LeaveBalanceCard.tsx`
+- `src/app/dashboard/employees/[id]/_components/LeaveHistoryTable.tsx`
+- `src/app/dashboard/employees/[id]/_components/LeaveAdjustmentModal.tsx`
+
+**Modified Files:**
+
+- `src/app/dashboard/employees/[id]/page.tsx` - Complete rewrite with tabs
+- `src/app/dashboard/page.tsx` - Added leave overview and alerts
+- `src/app/dashboard/payroll/[id]/page.tsx` - Leave accrual integration
+- `src/app/dashboard/payroll/[id]/_components/ReviewStep.tsx` - Show accruals
+- `src/app/dashboard/payroll/[id]/_components/CompleteStep.tsx` - YTD fix
+- `src/lib/payslip-generator.ts` - Added leave balances section
+- `src/types/employee.ts` - Added leave fields and types
+- `src/components/EditEmployeeModal.tsx` - TypeScript fixes
+- `src/components/LeaveAdjustmentModal.tsx` - TypeScript fixes
+
+### **Testing Completed:**
+
+✅ Leave accrual on payroll finalization  
+✅ Leave balance display on employee page  
+✅ Leave history tracking  
+✅ Manual leave adjustments  
+✅ Leave alerts on dashboard  
+✅ Payslip generation with leave balances  
+✅ Pro-rata calculations for part-time  
+✅ Contractor exclusion (no leave)  
+✅ YTD calculations (real from database)  
+✅ Dashboard date filtering
+
+### **What's Next:**
+
+Priority items for production launch:
+
+1. **Email Payslips** (2-3 days)
+   - SMTP integration
+   - Email templates
+   - Batch sending
+
+2. **STP Export** (1-2 weeks)
+   - XML/CSV format
+   - ATO schema compliance
+   - Manual lodgement instructions
+
+3. **Super Payment File** (1 week)
+   - ABA format generation
+   - SuperStream integration
+   - Payment instructions
+
+4. **Leave Request Workflow** (1 week)
+   - Employee portal
+   - Manager approval
+   - Auto-deduction on approval
+
+5. **Testing & Polish** (1 week)
+   - End-to-end testing
+   - Mobile responsiveness
+   - Error handling
+   - User documentation
 
 ---
 
-### **Why No Magic Links?**
+## 🚀 Launch Readiness
 
-**Removed:** Magic link (OTP) authentication
+### **✅ Ready for Production:**
 
-**Rationale:**
+- ✅ Employee management (CRUD operations)
+- ✅ Payroll processing (with leave accrual)
+- ✅ Leave tracking (balances, history, adjustments)
+- ✅ Payslip generation (with leave balances)
+- ✅ Tax calculations (PAYG, super)
+- ✅ BAS reporting (GST summaries)
+- ✅ Transaction management
+- ✅ Dashboard analytics
+- ✅ Organisation settings
+- ✅ User authentication
+- ✅ RLS security
+- ✅ Real-time updates
 
-- Not standard in payroll/accounting SaaS (Xero, MYOB, QuickBooks don't use it)
-- Adds complexity (separate confirmation flow)
-- Users prefer familiar password + Google OAuth
-- Simpler auth flow = fewer edge cases
+### **⚠️ Required for Launch:**
 
-**Current:** Email/password + Google OAuth only
+- ⚠️ Email payslips
+- ⚠️ STP export/lodgement
+- ⚠️ Super payment file
+- ⚠️ Comprehensive testing
+- ⚠️ User documentation
 
----
+### **🔜 Post-Launch Enhancements:**
 
-### **Why Nullable Organisation Name?**
-
-**Design:** `organisations.name` is nullable on signup
-
-**Rationale:**
-
-- Allows immediate signup without friction
-- Users can complete onboarding after exploring dashboard
-- Progressive disclosure (don't ask for everything upfront)
-- Can show onboarding prompts when name is NULL
-
-**Onboarding Flow:**
-
-1. Sign up (name=NULL)
-2. Explore dashboard
-3. See "Complete setup" banner
-4. Fill in business details
-5. Start using payroll features
-
----
-
-### **Why Keep pay_frequency on Both Tables?**
-
-**Design:** `organisations.default_pay_frequency` AND `employees.pay_frequency`
-
-**Rationale:**
-
-- Real businesses have mixed frequencies:
-  - Full-time: Fortnightly
-  - Casuals: Weekly
-  - Contractors: Monthly
-  - Executives: Monthly
-- Organisation default = smart default for new employees
-- Employee-level = per-person override when needed
-- Flexibility without forcing all employees to same schedule
+- Leave request workflow
+- Document uploads
+- Bank feeds
+- Timesheets
+- Multi-user support
+- Mobile app
 
 ---
 
-## 📊 Data Model Relationships
+**Last Updated:** October 2025
+**Version:** 2.2.0  
+**Status:** Leave Tracking Complete, Ready for Launch Preparation
 
-```
-auth.users (Supabase Auth)
-    ↓ id (owner_id)
-organisations
-    ↓ id (org_id)
-    ├─→ user_profiles (org_id → organisations.id)
-    ├─→ employees (org_id → organisations.id)
-    ├─→ payroll_runs (org_id → organisations.id)
-    │       ↓ id (payroll_run_id)
-    │       └─→ payroll_items (payroll_run_id → payroll_runs.id)
-    │               └─→ employees (employee_id → employees.id)
-    └─→ transactions (org_id → organisations.id)
-Key Points:
-
-Everything scoped to organisations via org_id
-user_profiles links users to their organisation
-Ready for multi-user (multiple profiles pointing to same org)
-Cascade deletes handled at database level
-
-
-🧪 Testing Strategy
-Manual Testing Checklist:
-Auth Flow:
-
- Sign up with email/password
- Confirm email
- Profile + org created automatically
- Sign in with password
- Sign in with Google OAuth
- Password reset flow works
-
-Organisation Setup:
-
- Dashboard shows "Complete setup" if name is NULL
- Settings page loads with correct tabs
- Can save business name + ABN
- Validation works (ABN, email)
- Unsaved changes warning appears
-
-Employees:
-
- Can add employee with wizard
- Default pay frequency comes from org
- Can override pay frequency per employee
- Search and filters work
- Real-time updates on changes
-
-Payroll:
-
- Can create pay run with setup wizard
- Overlap detection prevents duplicates
- Contractors calculated correctly (hourly rate)
- Can delete draft pay runs
- Cannot delete finalized runs
-
-Transactions:
-
- Can add transaction with category
- Can view transaction details
- Can edit transaction
- Can delete transaction
- Search and filters work
-
-Settings:
-
- Organisation tab saves to organisations table
- Profile tab saves to user_profiles table
- Tab switching preserves unsaved changes warning
- Last updated timestamp shows correctly
-
-
-🚀 Deployment Checklist
-Before Production:
-Security:
-
- Enable RLS on all tables
- Test RLS policies work correctly
- Remove any console.log with sensitive data
- Set up proper CORS in Supabase
- Enable 2FA for Supabase admin account
-
-Environment:
-
- Set NEXT_PUBLIC_SITE_URL to production domain
- Configure custom SMTP for emails
- Set up proper error tracking (Sentry)
- Configure analytics (PostHog, Mixpanel)
-
-Database:
-
- Run all indexes creation
- Enable connection pooling
- Set up automated backups
- Test database performance under load
-
-Auth:
-
- Configure OAuth redirect URLs for production
- Set up custom email templates
- Test password reset flow in production
- Verify email confirmation works
-
-Performance:
-
- Enable Next.js production build optimizations
- Set up CDN for static assets
- Configure caching headers
- Run Lighthouse audit
-
-Compliance:
-
- Add Terms of Service page
- Add Privacy Policy page
- Set up GDPR-compliant data export
- Add cookie consent banner (if using analytics)
-
-
-🐛 Common Errors & Solutions
-Error: "null value in column 'name' violates not-null constraint"
-Cause: organisations.name has NOT NULL constraint but trigger inserts NULL
-Solution:
-sqlALTER TABLE organisations ALTER COLUMN name DROP NOT NULL;
-
-Error: "No organisation found for user"
-Cause: Profile created but organisation missing
-Solution: Check trigger is working:
-sqlSELECT trigger_name FROM information_schema.triggers
-WHERE event_object_schema = 'auth' AND event_object_table = 'users';
-If missing, recreate trigger.
-
-Error: "User not authorized" on queries
-Cause: RLS blocking queries
-Solution: Check RLS policies exist:
-sqlSELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public';
-Temporarily disable RLS for testing:
-sqlALTER TABLE organisations DISABLE ROW LEVEL SECURITY;
-
-Error: "useOrgContext must be used within OrgProvider"
-Cause: Component using context outside provider
-Solution: Wrap app in provider:
-typescript// app/layout.tsx
-import { OrgProvider } from '@/context/OrgContext';
-
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <body>
-        <OrgProvider>
-          {children}
-        </OrgProvider>
-      </body>
-    </html>
-  );
-}
-
-Error: Contractor shows $0 for gross pay
-Cause: Only checking base_salary, ignoring hourly_rate
-Solution: Check hourly_rate first:
-typescriptconst grossPay = employee.hourly_rate
-  ? employee.hourly_rate * hoursWorked
-  : employee.base_salary;
-
-📈 Performance Optimization Tips
-Database Query Optimization:
-typescript// BAD: Multiple queries
-const employees = await getEmployees();
-for (const emp of employees) {
-  const payroll = await getPayroll(emp.id);
-}
-
-// GOOD: Single query with join
-const { data } = await supabase
-  .from('employees')
-  .select(`
-    *,
-    payroll_items (*)
-  `)
-  .eq('org_id', orgId);
-React Performance:
-typescript// Use memo for expensive calculations
-const totalGross = useMemo(() => {
-  return payrollItems.reduce((sum, item) => sum + item.gross, 0);
-}, [payrollItems]);
-
-// Use callback for functions passed as props
-const handleDelete = useCallback((id: string) => {
-  deleteEmployee(id);
-}, []);
-Supabase Real-time:
-typescript// Unsubscribe when component unmounts
-useEffect(() => {
-  const channel = supabase
-    .channel('changes')
-    .on('postgres_changes', { ... }, handler)
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
-
-🎓 Learning Resources
-Recommended Reading:
-
-Next.js App Router: Understanding server/client components
-Supabase Auth: Row Level Security best practices
-TypeScript: Advanced types for better safety
-Australian Tax: ATO guidelines for payroll
-
-Useful Supabase Queries:
-sql-- Get all tables and row counts
-SELECT schemaname, tablename,
-  (SELECT count(*) FROM schemaname.tablename) as row_count
-FROM pg_tables
-WHERE schemaname = 'public';
-
--- Find slow queries
-SELECT query, mean_exec_time, calls
-FROM pg_stat_statements
-ORDER BY mean_exec_time DESC
-LIMIT 10;
-
--- Check table sizes
-SELECT tablename,
-  pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
-
-Last Updated: October 18, 2025
-Version: 2.0.0
-Status: MVP Development Phase
-Recent Work: Auth restructuring, Settings redesign, Database consolidation
-
-Need help? Check the troubleshooting sections above or reference the Supabase/Next.js docs! 🚀
+**The leave tracking system is now fully implemented and production-ready!** 🎊 The app now handles Australian leave entitlements, automatic accrual, balance tracking, and compliance requirements. Next steps are email payslips and STP integration for full production launch.
 
 ---
-
-## ✅ Summary of Updates
-
-The PROJECT_CONTEXT.md file has been comprehensively updated with:
-
-1. **✅ Auth Flow Restructuring**
-   - Removed magic links
-   - Documented new signup/login flow
-   - Added auth callback and middleware sections
-
-2. **✅ Database Schema Changes**
-   - Consolidated `organisation_settings` into `organisations`
-   - Removed `public.users` table
-   - Updated all field mappings and constraints
-   - Added indexes and RLS policies
-
-3. **✅ Settings Page Redesign**
-   - Documented new tabbed interface
-   - Separated Organisation vs Profile settings
-   - Added future enhancement plans
-
-4. **✅ Architecture Decisions**
-   - Explained why single-owner model
-   - Rationale for removing magic links
-   - Why organisation name is nullable
-   - Why keep pay_frequency on both tables
-
-5. **✅ Migration Guide**
-   - Find/replace patterns for code updates
-   - Field mapping table
-   - Query changes
-
-6. **✅ Troubleshooting**
-   - Common errors and solutions
-   - Debugging queries
-   - Performance optimization tips
-
-7. **✅ Complete Context**
-   - Updated file structure
-   - Current feature status
-   - Recent updates summary
-   - Testing checklists
-   - Deployment checklist
-
-The document is now a comprehensive reference for the entire project state! 🎉
-```

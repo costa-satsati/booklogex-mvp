@@ -1,13 +1,13 @@
-// src/app/dashboard/payroll/[id]/page.tsx - FIXED VERSION
+// src/app/dashboard/payroll/[id]/page.tsx
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { notify } from '@/lib/notify';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { PayrollRun, PayrollItem, Employee } from '@/types/payroll';
+import type { PayrollRun, PayrollItem } from '@/types/payroll';
 import { useOrgContext } from '@/context/OrgContext';
 
 import PayrollSteps from './_components/PayrollSteps';
@@ -15,11 +15,13 @@ import SetupStep from './_components/SetupStep';
 import EmployeesStep from './_components/EmployeesStep';
 import ReviewStep from './_components/ReviewStep';
 import CompleteStep from './_components/CompleteStep';
+import { accrueLeaveForPayrollRun } from '@/lib/leave-accrual';
+import { Employee } from '@/types/employee';
 
 type PayrollStep = 'setup' | 'employees' | 'review' | 'complete';
 
 export default function ModernPayrollFlow({ params }: { params: Promise<{ id: string }> }) {
-  const { organisation: OrgContext, loading: orgLoading } = useOrgContext();
+  const { organisation: OrgContext } = useOrgContext();
   const { id } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,11 +33,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    loadPayrollData();
-  }, [id]);
-
-  const loadPayrollData = async () => {
+  const loadPayrollData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: runData, error: runError } = await supabase
@@ -47,12 +45,14 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
       if (runError) throw runError;
       setPayrollRun(runData);
 
+      // FIX: Fetch ALL employee fields using wildcard
       const { data: itemsData, error: itemsError } = await supabase
         .from('payroll_items')
-        .select('*, employees(full_name, email, position, tfn)')
+        .select('*, employees(*)') // ✅ Changed from specific fields to wildcard
         .eq('payroll_run_id', id);
 
       if (itemsError) throw itemsError;
+
       setPayrollItems(itemsData || []);
       setSelectedEmployeeIds(itemsData?.map((item) => item.employee_id) || []);
 
@@ -66,19 +66,16 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
       if (employeesError) throw employeesError;
       setAllEmployees(employeesData || []);
 
-      // FIX: Determine step based on status AND query param
+      // Determine step based on status AND query param
       const stepParam = searchParams.get('step') as PayrollStep | null;
 
       if (runData.status === 'finalized' || runData.status === 'completed') {
         setCurrentStep('complete');
       } else if (stepParam && ['setup', 'employees', 'review'].includes(stepParam)) {
-        // Use query param if provided and valid
         setCurrentStep(stepParam);
       } else if (itemsData && itemsData.length > 0) {
-        // Has items, go to review
         setCurrentStep('review');
       } else {
-        // New draft, start at setup
         setCurrentStep('setup');
       }
     } catch (error) {
@@ -87,7 +84,11 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, searchParams]);
+
+  useEffect(() => {
+    loadPayrollData();
+  }, [loadPayrollData]);
 
   const handleStepChange = (step: PayrollStep) => {
     if (payrollRun?.status === 'finalized' || payrollRun?.status === 'completed') {
@@ -103,8 +104,24 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
   };
 
   const handleFinalize = async () => {
+    if (!payrollRun) {
+      notify.error('Error', 'Payroll run not found');
+      return;
+    }
     try {
-      // Update status to finalized
+      // 1. Accrue leave for all employees in this pay run
+      const leaveResults = await accrueLeaveForPayrollRun(payrollRun, allEmployees);
+
+      const failedAccruals = leaveResults.filter((r) => !r.success);
+      if (failedAccruals.length > 0) {
+        console.warn('Some leave accruals failed:', failedAccruals);
+        notify.warning(
+          'Leave Accrual Warning',
+          `${failedAccruals.length} employee(s) failed leave accrual`
+        );
+      }
+
+      // 2. Update status to finalized
       const { error: updateError } = await supabase
         .from('payroll_runs')
         .update({
@@ -115,7 +132,7 @@ export default function ModernPayrollFlow({ params }: { params: Promise<{ id: st
 
       if (updateError) throw updateError;
 
-      notify.success('Success', 'Pay run finalized successfully');
+      notify.success('Success', 'Pay run finalized successfully with leave accruals');
       setCurrentStep('complete');
       await loadPayrollData();
     } catch (error) {

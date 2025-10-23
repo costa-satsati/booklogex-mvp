@@ -36,6 +36,8 @@ import {
 import { useRouter } from 'next/navigation';
 import OnboardingBanner from '@/components/OnboardingBanner';
 import { useOrgContext } from '@/context/OrgContext';
+import { checkLeaveAlerts, LeaveAlert } from '@/lib/leave-alerts';
+import type { Employee } from '@/types/employee';
 
 type Summary = {
   income: number;
@@ -55,6 +57,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodOption>('thisMonth');
   const [employeeCount, setEmployeeCount] = useState(0);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [upcomingPayDate, setUpcomingPayDate] = useState<string | null>(null);
   const [onboardingStatus, setOnboardingStatus] = useState({
     hasBusinessName: false,
@@ -62,7 +65,17 @@ export default function DashboardPage() {
     hasPayrollRun: false,
   });
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
-  const { organisation, loading: orgLoading } = useOrgContext();
+  const { organisation } = useOrgContext();
+  const [leaveAlerts, setLeaveAlerts] = useState<LeaveAlert[]>([]);
+
+  useEffect(() => {
+    if (employees.length > 0) {
+      const alerts = checkLeaveAlerts(employees);
+      setLeaveAlerts(alerts);
+    } else {
+      setLeaveAlerts([]); // ✅ Clear alerts when no employees
+    }
+  }, [employees]);
 
   const getDateRange = useCallback(() => {
     const now = new Date();
@@ -108,11 +121,16 @@ export default function DashboardPage() {
     const { start, end } = getDateRange();
 
     try {
-      let txnQuery = supabase.from('transactions').select('type, amount, gst_amount, txn_date');
+      let txnQuery = supabase
+        .from('transactions')
+        .select('type, amount, gst_amount, txn_date')
+        .eq('org_id', organisation.id);
+
       let payrollQuery = supabase
         .from('payroll_runs')
         .select('total_gross, total_tax, total_super, pay_period_end')
-        .eq('org_id', organisation.id);
+        .eq('org_id', organisation.id)
+        .in('status', ['finalized', 'completed']);
 
       if (start && end) {
         txnQuery = txnQuery.gte('txn_date', start.toISOString()).lte('txn_date', end.toISOString());
@@ -124,15 +142,27 @@ export default function DashboardPage() {
       const [
         { data: txns, error: txnError },
         { data: payroll, error: payrollError },
-        { data: employees, error: empError, count: empCount }, // ✅ FIX #1: Extract count
+        { error: empError, count: empCount },
+        { data: employeesData, error: empDataError },
         { data: upcomingRun, error: runError },
       ] = await Promise.all([
         txnQuery,
         payrollQuery,
-        supabase.from('employees').select('id', { count: 'exact', head: true }).eq('active', true), // ✅ Use head: true for count
+        supabase
+          .from('employees')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', organisation.id)
+          .eq('active', true),
+        supabase
+          .from('employees')
+          .select('*')
+          .eq('org_id', organisation.id)
+          .eq('active', true)
+          .order('full_name'),
         supabase
           .from('payroll_runs')
           .select('pay_date')
+          .eq('org_id', organisation.id)
           .gte('pay_date', new Date().toISOString())
           .order('pay_date', { ascending: true })
           .limit(1)
@@ -169,9 +199,14 @@ export default function DashboardPage() {
         super: superTotal,
       });
 
-      // ✅ FIX #1: Use extracted count
+      // ✅ FIX: Set employee count
       if (!empError) {
         setEmployeeCount(empCount || 0);
+      }
+
+      // ✅ FIX: Set employees data for leave alerts
+      if (!empDataError && employeesData) {
+        setEmployees(employeesData);
       }
 
       if (!runError && upcomingRun?.pay_date) {
@@ -182,7 +217,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [getDateRange]);
+  }, [getDateRange, organisation?.id]);
 
   // Check onboarding status
   useEffect(() => {
@@ -353,12 +388,37 @@ export default function DashboardPage() {
           hasPayrollRun={onboardingStatus.hasPayrollRun}
         />
       )}
+
+      {/* Leave Alerts */}
+      {leaveAlerts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={18} className="text-amber-600" />
+            <h3 className="font-semibold text-amber-900">Leave Balance Alerts</h3>
+          </div>
+          <div className="space-y-2">
+            {leaveAlerts.slice(0, 3).map((alert, i) => (
+              <div key={i} className="text-sm text-amber-700">
+                • {alert.message}
+              </div>
+            ))}
+            {leaveAlerts.length > 3 && (
+              <button
+                onClick={() => router.push('/dashboard/employees')}
+                className="text-sm text-amber-600 hover:text-amber-700 font-medium"
+              >
+                View all {leaveAlerts.length} alerts →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b pb-6">
         <h1 className="text-4xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-gray-600 mt-2">Here&apos;s what&apos;s happening with your business</p>
       </div>
-
       {/* Top Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <select
@@ -390,7 +450,6 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
@@ -472,7 +531,65 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      {/* Leave Overview Card */}
+      <div className="bg-white border rounded-lg p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <Calendar size={18} className="text-blue-600" />
+          Leave Overview
+        </h3>
+        <div className="space-y-3">
+          {employees && employees.length > 0 ? (
+            <>
+              {employees
+                .filter(
+                  (emp) =>
+                    emp.employment_type === 'full_time' || emp.employment_type === 'part_time'
+                )
+                .slice(0, 5)
+                .map((emp) => (
+                  <div
+                    key={emp.id}
+                    className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                  >
+                    <div>
+                      <div className="font-medium text-gray-900 text-sm">{emp.full_name}</div>
+                      <div className="text-xs text-gray-600">
+                        {emp.position || emp.employment_type}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-blue-600">
+                        {(emp.annual_leave_hours || 0).toFixed(0)}h
+                      </div>
+                      <div className="text-xs text-gray-500">annual</div>
+                    </div>
+                  </div>
+                ))}
 
+              {/* Show message if no eligible employees */}
+              {employees.filter(
+                (emp) => emp.employment_type === 'full_time' || emp.employment_type === 'part_time'
+              ).length === 0 && (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  No employees with leave entitlements
+                </div>
+              )}
+            </>
+          ) : (
+            // ✅ Show loading or empty state
+            <div className="text-center py-8 text-gray-500 text-sm">
+              {loading ? 'Loading employees...' : 'No employees yet'}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => router.push('/dashboard/employees')}
+          className="w-full mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
+        >
+          {employees && employees.length > 0 ? 'View all employees' : 'Add your first employee'} →
+        </button>
+      </div>
       {/* Action Items & Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border rounded-xl p-6 shadow-sm">
@@ -558,7 +675,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border rounded-xl shadow-sm p-6">
@@ -615,7 +731,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-
       {/* Payroll Summary */}
       <div className="bg-white border rounded-xl shadow-sm p-6">
         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -655,7 +770,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-
       {/* Quick Actions Banner */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-lg">
         <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>

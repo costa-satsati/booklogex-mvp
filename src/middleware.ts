@@ -25,7 +25,7 @@ export async function middleware(req: NextRequest) {
 
   // Check for org setup
   if (user && req.nextUrl.pathname.startsWith('/dashboard')) {
-    const { data: profile } = await supabase
+    await supabase
       .from('user_profiles')
       .select('org_id')
       .eq('id', user.id)

@@ -1,25 +1,5 @@
 // src/types/payroll.ts (COMPLETE VERSION)
-export interface Employee {
-  id: string;
-  full_name: string;
-  email: string | null;
-  tfn: string | null;
-  position: string | null;
-  employment_type: 'full_time' | 'part_time' | 'casual' | 'contractor';
-  hourly_rate: number | null;
-  base_salary: number | null;
-  pay_frequency: 'weekly' | 'fortnightly' | 'monthly';
-  hours_worked: number | null;
-  super_rate: number;
-  active: boolean;
-  start_date: string | null;
-  end_date: string | null;
-  tax_rate: number;
-  tax_free_threshold: boolean;
-  help_debt: boolean;
-  org_id: string;
-  created_at: string;
-}
+import type { Employee } from '@/types/employee';
 
 export interface PayrollRun {
   id: string;
@@ -50,13 +30,7 @@ export interface PayrollItem {
   hours_worked: number | null;
   description: string | null;
   created_at: string;
-  employees?: {
-    full_name: string;
-    email: string | null;
-    position: string | null;
-    employment_type: string | null;
-    tfn: string | null;
-  };
+  employees?: Employee;
 }
 
 export interface PayrollCalculation {

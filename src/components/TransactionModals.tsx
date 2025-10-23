@@ -853,7 +853,6 @@ export default function TransactionModals({
   modalState,
   selectedTransaction,
   onClose,
-  onAdd,
   onEdit,
   onDelete,
   onModalStateChange,
