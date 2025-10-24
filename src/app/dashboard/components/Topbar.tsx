@@ -84,12 +84,6 @@ export function Topbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Search - Desktop only */}
-            <button className="hidden lg:flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-              <Search size={16} className="text-gray-600" />
-              <span className="text-sm text-gray-600">Search...</span>
-            </button>
-
             {/* Notifications */}
             <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <Bell size={20} className="text-gray-600" />
